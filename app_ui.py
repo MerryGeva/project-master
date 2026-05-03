@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
 import io
@@ -11,7 +12,39 @@ STUDENTS_FILE = "students_list.csv"
 CONFIG_FILE = "system_config.csv"
 TEACHER_PASSWORD = "123"
 
+# --- הגדרות דף ---
+st.set_page_config(page_title="Project Master Pro", layout="wide")
+st.markdown("<style>.stApp { direction: rtl; text-align: right; } div[st-decorator='sidebar'] { direction: rtl; }</style>", unsafe_allow_html=True)
 
+# --- חיבור ל-Google Sheets ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+def get_data(worksheet_name, expected_cols):
+    try:
+        # ttl=0 מוודא שאנחנו תמיד קוראים נתונים טריים ולא מהזיכרון
+        df = conn.read(worksheet=worksheet_name, ttl=0)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=expected_cols)
+        return df.astype(str)
+    except:
+        return pd.DataFrame(columns=expected_cols)
+
+def update_sheets(df, worksheet_name):
+    # כתיבה לגיליון גוגל
+    conn.update(worksheet=worksheet_name, data=df)
+    st.cache_data.clear()
+
+# --- טעינת נתונים (מגוגל במקום מ-CSV) ---
+config_df = get_data("config", ["שלב", "תאריך יעד"])
+if config_df.empty:
+    config_df = pd.DataFrame([
+        {"שלב": "1. בחירת נושא", "תאריך יעד": "2026-03-01"},
+        {"שלב": "2. אפיון", "תאריך יעד": "2026-03-15"}
+    ])
+all_stages = config_df['שלב'].tolist()
+
+subs_df = get_data("submissions", ["זמן הגשה", 'ת"ז', "סיסמה", "שם התלמיד", "שלב", "שם הפרויקט", "תיאור/לינק", "סטטוס", "הערות מורה", "סטטוס זמן"])
+students_df = get_data("students", ["ת\"ז", "שם מלא"])
 # --- פונקציות נתונים ---
 def load_data(file, default_cols):
     if os.path.exists(file):
@@ -56,7 +89,7 @@ def is_stage_approved(df, student_id, stage_name, all_stages):
 
 
 # --- הגדרות דף ---
-st.set_page_config(page_title="Project Master Pro", layout="wide")
+#st.set_page_config(page_title="Project Master Pro", layout="wide")
 st.markdown(
     "<style>.stApp { direction: rtl; text-align: right; } div[st-decorator='sidebar'] { direction: rtl; }</style>",
     unsafe_allow_html=True)
