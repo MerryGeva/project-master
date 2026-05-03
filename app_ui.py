@@ -173,29 +173,59 @@ else:
                 st.success("הרשימה עודכנה!")
                 st.rerun()
 
+
         elif menu == "דו\"ח התקדמות כיתתי":
+
             st.header("📊 מטריצת מעקב כיתתית")
+
             if not students_df.empty:
+
                 report = []
+
                 for _, s in students_df.iterrows():
+
                     row = {"שם": s['שם מלא'], "ת\"ז": s['ת"ז']}
+
                     for stg in all_stages:
                         sub = subs_df[(subs_df['ת"ז'] == s['ת"ז']) & (subs_df['שלב'] == stg)]
+
                         row[stg] = sub.iloc[-1]['סטטוס'] if not sub.empty else "❌ לא הוגש"
+
                     report.append(row)
 
+                # יצירת ה-DataFrame
+
+                df_report = pd.DataFrame(report)
+
+
+                # פונקציית הצביעה
 
                 def color_status(val):
+
                     if val == "❌ לא הוגש": return 'background-color: #ffcccc'
+
                     if val == "✅ מאושר": return 'background-color: #ccffcc'
+
                     if val == "ממתין לבדיקה": return 'background-color: #ffe6cc'
+
                     return ''
 
 
-                st.dataframe(pd.DataFrame(report).style.applymap(color_status), use_container_width=True)
-            else:
-                st.warning("אין תלמידים רשומים.")
+                # תיקון השגיאה: שימוש ב-map במקום applymap (מתאים לגרסאות חדשות)
 
+                try:
+
+                    styled_df = df_report.style.map(color_status)
+
+                except:
+
+                    styled_df = df_report.style.applymap(color_status)
+
+                st.dataframe(styled_df, use_container_width=True)
+
+            else:
+
+                st.warning("אין תלמידים רשומים בגיליון Google Sheets.")
         elif menu == "בדיקת הגשות":
             st.header("📥 בדיקת עבודות חדשות")
 
