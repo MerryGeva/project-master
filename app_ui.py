@@ -30,10 +30,12 @@ def get_data(worksheet_name, expected_cols):
         return pd.DataFrame(columns=expected_cols)
 
 def update_sheets(df, worksheet_name):
-    # כתיבה לגיליון גוגל
-    conn.update(worksheet=worksheet_name, data=df)
-    st.cache_data.clear()
-
+    try:
+        conn.update(worksheet=worksheet_name, data=df)
+        st.cache_data.clear()
+        st.success(f"הנתונים נשמרו בהצלחה בלשונית {worksheet_name}!") # הודעה ירוקה למשתמש
+    except Exception as e:
+        st.error(f"שגיאה בשמירה לגוגל: {e}") # הודעה אדומה עם פירוט השגיאה
 # --- טעינת נתונים (מגוגל במקום מ-CSV) ---
 config_df = get_data("config", ["שלב", "תאריך יעד"])
 if config_df.empty:
