@@ -139,7 +139,7 @@ else:
 
         if menu == "הגדרות שלבים":
             st.header("⚙️ הגדרות שלבי הפרויקט ותאריכי יעד")
-            edited_config = st.data_editor(config_df, num_rows="dynamic", use_container_width=True)
+            edited_config = st.data_editor(config_df, num_rows="dynamic", width='stretch')
             if st.button("שמור שינויים"):
                 save_data(edited_config, CONFIG_FILE)
                 st.success("הגדרות המערכת עודכנו!")
@@ -169,7 +169,7 @@ else:
             st.divider()
             # עריכה ידנית
             st.subheader("📝 עריכה ידנית")
-            edited_s = st.data_editor(students_df, num_rows="dynamic", use_container_width=True)
+            edited_s = st.data_editor(students_df, num_rows="dynamic", width='stretch')
             if st.button("שמור שינויים ידניים"):
                 save_data(edited_s, STUDENTS_FILE)
                 st.success("הרשימה עודכנה!")
@@ -223,7 +223,7 @@ else:
 
                     styled_df = df_report.style.applymap(color_status)
 
-                st.dataframe(styled_df, use_container_width=True)
+                st.dataframe(styled_df, width='stretch')
 
             else:
 
@@ -313,7 +313,7 @@ else:
             doc_link = st.text_input(link_label, value=prev_link)
             content = st.text_area("תיאור הביצוע / הערות:", value=prev_info)
 
-            if st.button("🚀 שלח הגשה", use_container_width=True):
+            if st.button("🚀 שלח הגשה", width='stretch'):
                 if not p_name.strip():
                     st.error("❌ חובה להזין את שם הפרויקט.")
                 elif requires_link and (not doc_link.strip() or "http" not in doc_link):
