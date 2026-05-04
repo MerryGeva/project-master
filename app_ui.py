@@ -18,6 +18,10 @@ st.markdown("<style>.stApp { direction: rtl; text-align: right; } div[st-decorat
 
 # --- חיבור ל-Google Sheets ---
 conn = st.connection("gsheets", type=GSheetsConnection)
+# זה ידפיס לך באפליקציה לאיזה גיליון היא מחוברת
+if st.sidebar.checkbox("הצג מזהה גיליון (Debug)"):
+    st.sidebar.write(f"מחובר לגיליון: {st.secrets['connections']['gsheets']['spreadsheet']}")
+
 
 def get_data(worksheet_name, expected_cols):
     try:
@@ -96,8 +100,16 @@ def load_data(file, default_cols):
 
 
 def save_data(df, file):
+    # שומר לקובץ המקומי (ליתר ביטחון)
     df.to_csv(file, index=False, encoding='utf-8-sig')
 
+    # שומר לגוגל שייטס לפי שם הקובץ
+    if file == STUDENTS_FILE:
+        update_sheets(df, "students")
+    elif file == DB_FILE:
+        update_sheets(df, "submissions")
+    elif file == CONFIG_FILE:
+        update_sheets(df, "config")
 
 def get_config():
     df = load_data(CONFIG_FILE, ["שלב", "תאריך יעד"])
