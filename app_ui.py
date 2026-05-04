@@ -32,18 +32,32 @@ def get_data(worksheet_name, expected_cols):
 
 def update_sheets(df, worksheet_name):
     try:
-        # 1. ניסיון כתיבה רגיל
-        conn.update(worksheet=worksheet_name, data=df)
-
-        # 2. הוספת "חותמת" בתא בודד כדי לוודא שזה הגיליון הנכון
-        # הערה: אם הספרייה שלך לא תומכת ב-update לתא בודד, השורה למעלה מספיקה
-
+        # ניקוי זיכרון כדי לראות נתונים טריים
         st.cache_data.clear()
-        st.cache_resource.clear()
-        st.success(f"נשלחה פקודת עדכון ל-{worksheet_name}!")
 
+        # המרה לטקסט ועדכון
+        df_to_save = pd.DataFrame(df).astype(str)
+        conn.update(worksheet=worksheet_name, data=df_to_save)
+
+        st.success(f"✅ הצלחתי לעדכן את לשונית {worksheet_name}!")
+        st.balloons()  # זה ייתן סימן ויזואלי חזק שהפקודה עברה
     except Exception as e:
-        st.error(f"שגיאה: {e}")
+        st.error(f"❌ אופס! השמירה נכשלה. הסיבה: {e}")
+#
+# def update_sheets(df, worksheet_name):
+#     try:
+#         # 1. ניסיון כתיבה רגיל
+#         conn.update(worksheet=worksheet_name, data=df)
+#
+#         # 2. הוספת "חותמת" בתא בודד כדי לוודא שזה הגיליון הנכון
+#         # הערה: אם הספרייה שלך לא תומכת ב-update לתא בודד, השורה למעלה מספיקה
+#
+#         st.cache_data.clear()
+#         st.cache_resource.clear()
+#         st.success(f"נשלחה פקודת עדכון ל-{worksheet_name}!")
+#
+#     except Exception as e:
+#         st.error(f"שגיאה: {e}")
 # def update_sheets(df, worksheet_name):
 #     try:
 #         # המרה של כל הנתונים לטקסט כדי למנוע בעיות פורמט של גוגל
