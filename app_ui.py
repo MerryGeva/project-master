@@ -21,7 +21,12 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # זה ידפיס לך באפליקציה לאיזה גיליון היא מחוברת
 if st.sidebar.checkbox("הצג מזהה גיליון (Debug)"):
     st.sidebar.write(f"מחובר לגיליון: {st.secrets['connections']['gsheets']['spreadsheet']}")
-
+# זה ידפיס לך באפליקציה את השם של הקובץ שהיא מזהה
+try:
+    metadata = conn.inspect()
+    st.write(f"DEBUG: שם הקובץ המזוהה: {metadata.get('title')}")
+except:
+    st.write("DEBUG: לא מצליח לקרוא מטא-דאטה")
 
 def get_data(worksheet_name, expected_cols):
     try:
@@ -47,36 +52,7 @@ def update_sheets(df, worksheet_name):
         st.balloons()  # זה ייתן סימן ויזואלי חזק שהפקודה עברה
     except Exception as e:
         st.error(f"❌ אופס! השמירה נכשלה. הסיבה: {e}")
-#
-# def update_sheets(df, worksheet_name):
-#     try:
-#         # 1. ניסיון כתיבה רגיל
-#         conn.update(worksheet=worksheet_name, data=df)
-#
-#         # 2. הוספת "חותמת" בתא בודד כדי לוודא שזה הגיליון הנכון
-#         # הערה: אם הספרייה שלך לא תומכת ב-update לתא בודד, השורה למעלה מספיקה
-#
-#         st.cache_data.clear()
-#         st.cache_resource.clear()
-#         st.success(f"נשלחה פקודת עדכון ל-{worksheet_name}!")
-#
-#     except Exception as e:
-#         st.error(f"שגיאה: {e}")
-# def update_sheets(df, worksheet_name):
-#     try:
-#         # המרה של כל הנתונים לטקסט כדי למנוע בעיות פורמט של גוגל
-#         df = df.astype(str)
-#
-#         # פקודת העדכון
-#         conn.update(worksheet=worksheet_name, data=df)
-#
-#         # ניקוי זיכרון מוחלט - זה קריטי!
-#         st.cache_data.clear()
-#         st.cache_resource.clear()
-#
-#         st.success(f"הצלחתי לכתוב ל-{worksheet_name}! רענני את גיליון גוגל.")
-#     except Exception as e:
-#         st.error(f"שגיאה טכנית: {e}")
+
 # --- טעינת נתונים (מגוגל במקום מ-CSV) ---
 config_df = get_data("config", ["שלב", "תאריך יעד"])
 if config_df.empty:
