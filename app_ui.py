@@ -17,8 +17,14 @@ st.set_page_config(page_title="Project Master Pro", layout="wide")
 st.markdown("<style>.stApp { direction: rtl; text-align: right; } div[st-decorator='sidebar'] { direction: rtl; }</style>", unsafe_allow_html=True)
 
 # --- חיבור ל-Google Sheets ---
+# החליפי את שורת ה-conn בזו:
 conn = st.connection("gsheets", type=GSheetsConnection)
-# זה ידפיס לך באפליקציה לאיזה גיליון היא מחוברת
+
+# ותוסיפי את זה מיד מתחת כדי לרענן את החיבור:
+if st.button("רענן חיבור לגוגל"):
+    st.cache_data.clear()
+    st.rerun()
+    # זה ידפיס לך באפליקציה לאיזה גיליון היא מחוברת
 if st.sidebar.checkbox("הצג מזהה גיליון (Debug)"):
     st.sidebar.write(f"מחובר לגיליון: {st.secrets['connections']['gsheets']['spreadsheet']}")
 # זה ידפיס לך באפליקציה את השם של הקובץ שהיא מזהה
