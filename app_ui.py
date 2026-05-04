@@ -17,12 +17,13 @@ st.set_page_config(page_title="Project Master Pro", layout="wide")
 st.markdown("<style>.stApp { direction: rtl; text-align: right; } div[st-decorator='sidebar'] { direction: rtl; }</style>", unsafe_allow_html=True)
 
 # --- חיבור ל-Google Sheets ---
-# החליפי את שורת ה-conn בזו:
+# החלפת שורת החיבור
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ותוסיפי את זה מיד מתחת כדי לרענן את החיבור:
-if st.button("רענן חיבור לגוגל"):
+# הוספת כפתור "ריענון כוחני" מתחת ל-DEBUG
+if st.sidebar.button("סינכרון מחדש מול גוגל"):
     st.cache_data.clear()
+    st.cache_resource.clear()
     st.rerun()
     # זה ידפיס לך באפליקציה לאיזה גיליון היא מחוברת
 if st.sidebar.checkbox("הצג מזהה גיליון (Debug)"):
