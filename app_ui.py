@@ -100,17 +100,16 @@ def load_data(file, default_cols):
 
 
 def save_data(df, file):
-    # שומר לקובץ המקומי (ליתר ביטחון)
+    # שומר לקובץ המקומי (גיבוי)
     df.to_csv(file, index=False, encoding='utf-8-sig')
 
-    # שומר לגוגל שייטס לפי שם הקובץ
+    # שומר לגוגל שייטס - זה החלק שחסר לך!
     if file == STUDENTS_FILE:
         update_sheets(df, "students")
     elif file == DB_FILE:
         update_sheets(df, "submissions")
     elif file == CONFIG_FILE:
         update_sheets(df, "config")
-
 def get_config():
     df = load_data(CONFIG_FILE, ["שלב", "תאריך יעד"])
     if df.empty:
