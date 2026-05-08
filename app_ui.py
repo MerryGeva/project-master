@@ -1,5 +1,5 @@
 #"https://docs.google.com/forms/d/e/1FAIpQLSf3vGFIikpAHVhZuSTPO04GdsP7BwxejG8lo-Voo0sKIXBdoA/viewform?usp=pp_url&entry.140138051=022168199&entry.1070948481=merry+geva&entry.1153840624=1&entry.760419112=cameras&entry.4763804=jkljsakal"
-#"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?output=xlsx"
+#"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?gid=1111779993&single=true&output=csv"
 
 import streamlit as st
 import pandas as pd
@@ -11,7 +11,7 @@ import time
 # ה-URL שנגמר ב-formResponse
 
 FORM_URL = "https://docs.google.com/forms/d/e/18ZgQE2gaWfmIy_cryTeTKLFebUi0DPLopeDgA6IB8NI/formResponse"
-SHEET_CSV_URL="https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?output=xlsx"
+SHEET_CSV_URL="https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?gid=1111779993&single=true&output=csv"
 # FORM_ID = "18ZgQE2gaWfmIy_cryTeTKLFebUi0DPLopeDgA6IB8NI"
 
 # מזהי השדות (entry.xxxx) כפי שמופיעים ב-Pre-filled link של הפורם
