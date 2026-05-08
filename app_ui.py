@@ -47,29 +47,40 @@ def get_data(worksheet_name, expected_cols):
 # --- פונקציות ניהול נתונים (המפתח לפתרון) ---
 
 def load_data(file, default_cols):
-    """טוען נתונים מגוגל שייטס בהתאם לסוג הקובץ"""
-    if file == STUDENTS_FILE:
-        return get_data("students", default_cols)
-    elif file == DB_FILE:
-        return get_data("submissions", default_cols)
-    elif file == CONFIG_FILE:
-        return get_data("config", default_cols)
+    # הגדרת מפה פשוטה בין שם הקובץ ללשונית בגוגל
+    mapping = {
+        STUDENTS_FILE: "students",
+        DB_FILE: "submissions",
+        CONFIG_FILE: "config"
+    }
+
+    if file in mapping:
+        try:
+            # קריאה ישירה בלי לבדוק מטא-דאטה
+            df = conn.read(worksheet=mapping[file], ttl=0)
+            if df is not None and not df.empty:
+                return df.astype(str)
+        except Exception as e:
+            st.error(f"שגיאת טעינה מגוגל ({mapping[file]}): {e}")
+
+    # אם נכשל, ננסה מהקובץ המקומי (ליתר ביטחון)
+    if os.path.exists(file):
+        return pd.read_csv(file, dtype={'ת"ז': str}).fillna("")
     return pd.DataFrame(columns=default_cols)
 
 
 def save_data(df, file):
-    """שומר גם לקובץ מקומי וגם מעלה לגוגל שייטס"""
-    # 1. שמירה מקומית לגיבוי
+    # 1. שמירה מקומית (תמיד טוב לגיבוי)
     df.to_csv(file, index=False, encoding='utf-8-sig')
 
-    # 2. שמירה לגוגל שייטס (כאן קורה הקסם)
-    if file == STUDENTS_FILE:
-        update_sheets(df, "students")
-    elif file == DB_FILE:
-        update_sheets(df, "submissions")
-    elif file == CONFIG_FILE:
-        update_sheets(df, "config")
-
+    # 2. שליחה לגוגל
+    mapping = {
+        STUDENTS_FILE: "students",
+        DB_FILE: "submissions",
+        CONFIG_FILE: "config"
+    }
+    if file in mapping:
+        update_sheets(df, mapping[file])
 
 # --- DEBUG - בדיקת חיבור ---
 if st.sidebar.checkbox("בדיקת חיבור גוגל (Debug)"):
