@@ -21,33 +21,34 @@ st.markdown(
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 
-def update_sheets(df, worksheet_name):
-    try:
-        st.cache_data.clear()
-        df_to_save = pd.DataFrame(df).astype(str)
-        # עדכון הגיליון
-        conn.update(worksheet=worksheet_name, data=df_to_save)
-        st.success(f"✅ הנתונים סונכרנו בהצלחה ללשונית {worksheet_name} בגוגל!")
-        st.balloons()
-    except Exception as e:
-        st.error(f"❌ שגיאת סנכרון לגוגל: {e}")
-
-
 def get_data(worksheet_name, expected_cols):
     try:
-        # קריאה ישירה מגוגל עם ttl=0 כדי למנוע זיכרון ישן
+        # קריאה הכי פשוטה שיש - רק שם הלשונית
         df = conn.read(worksheet=worksheet_name, ttl=0)
-        if df is None or df.empty:
-            return pd.DataFrame(columns=expected_cols)
-        return df.astype(str)
-    except:
+        if df is not None and not df.empty:
+            return df.astype(str)
+        return pd.DataFrame(columns=expected_cols)
+    except Exception as e:
+        # במקום להציג שגיאת 200, נחזיר דף ריק כדי שהאפליקציה לא תיתקע
         return pd.DataFrame(columns=expected_cols)
 
 
-# --- פונקציות ניהול נתונים (המפתח לפתרון) ---
+def update_sheets(df, worksheet_name):
+    try:
+        st.cache_data.clear()
+        # המרה ל-DataFrame נקי בלי אינדקס
+        df_to_save = pd.DataFrame(df).astype(str)
+
+        # שימוש בחיבור הישיר לעדכון
+        conn.update(worksheet=worksheet_name, data=df_to_save)
+
+        st.success(f"✅ עודכן בהצלחה בגיליון גוגל ({worksheet_name})")
+        st.balloons()
+    except Exception as e:
+        st.error(f"❌ שגיאת כתיבה: {e}")
+
 
 def load_data(file, default_cols):
-    # הגדרת מפה פשוטה בין שם הקובץ ללשונית בגוגל
     mapping = {
         STUDENTS_FILE: "students",
         DB_FILE: "submissions",
@@ -55,19 +56,18 @@ def load_data(file, default_cols):
     }
 
     if file in mapping:
-        try:
-            # קריאה ישירה בלי לבדוק מטא-דאטה
-            df = conn.read(worksheet=mapping[file], ttl=0)
-            if df is not None and not df.empty:
-                return df.astype(str)
-        except Exception as e:
-            st.error(f"שגיאת טעינה מגוגל ({mapping[file]}): {e}")
+        # מנסים לקרוא מגוגל
+        df = get_data(mapping[file], default_cols)
+        if not df.empty:
+            return df
 
-    # אם נכשל, ננסה מהקובץ המקומי (ליתר ביטחון)
+    # אם גוגל ריק או נכשל, ננסה מהקובץ המקומי
     if os.path.exists(file):
-        return pd.read_csv(file, dtype={'ת"ז': str}).fillna("")
+        try:
+            return pd.read_csv(file, dtype={'ת"ז': str}).fillna("")
+        except:
+            return pd.DataFrame(columns=default_cols)
     return pd.DataFrame(columns=default_cols)
-
 
 def save_data(df, file):
     # 1. שמירה מקומית (תמיד טוב לגיבוי)
