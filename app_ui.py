@@ -23,15 +23,15 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data(worksheet_name, expected_cols):
     try:
-        # קריאה הכי פשוטה שיש - רק שם הלשונית
+        # פקודה ישירה שעוקפת את המטא-דאטה
         df = conn.read(worksheet=worksheet_name, ttl=0)
         if df is not None and not df.empty:
             return df.astype(str)
-        return pd.DataFrame(columns=expected_cols)
     except Exception as e:
-        # במקום להציג שגיאת 200, נחזיר דף ריק כדי שהאפליקציה לא תיתקע
-        return pd.DataFrame(columns=expected_cols)
-
+        # אם יש שגיאה (כמו ה-200 המעצבן), אנחנו לא מציגים אותה
+        # אלא פשוט מחזירים טבלה ריקה וממשיכים ל-CSV המקומי
+        pass
+    return pd.DataFrame(columns=expected_cols)
 
 def update_sheets(df, worksheet_name):
     try:
@@ -49,24 +49,26 @@ def update_sheets(df, worksheet_name):
 
 
 def load_data(file, default_cols):
+    # מפה שמקשרת בין הקובץ ללשונית בגוגל
     mapping = {
         STUDENTS_FILE: "students",
         DB_FILE: "submissions",
         CONFIG_FILE: "config"
     }
 
+    # 1. נסיון קריאה מגוגל
     if file in mapping:
-        # מנסים לקרוא מגוגל
-        df = get_data(mapping[file], default_cols)
-        if not df.empty:
-            return df
+        df_google = get_data(mapping[file], default_cols)
+        if not df_google.empty:
+            return df_google
 
-    # אם גוגל ריק או נכשל, ננסה מהקובץ המקומי
+    # 2. אם גוגל נכשל או ריק, קריאה מה-CSV המקומי (שקיים ב-GitHub)
     if os.path.exists(file):
         try:
             return pd.read_csv(file, dtype={'ת"ז': str}).fillna("")
         except:
             return pd.DataFrame(columns=default_cols)
+
     return pd.DataFrame(columns=default_cols)
 
 def save_data(df, file):
