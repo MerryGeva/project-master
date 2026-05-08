@@ -3,27 +3,21 @@ import pandas as pd
 import requests
 import time
 
-# --- הגדרות לינקים (כפי שהיו) ---
+# --- הגדרות לינקים ---
 FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSf3vGFIikpAHVhZuSTPO04GdsP7BwxejG8lo-Voo0sKIXBdoA/formResponse"
 URL_SUBS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?gid=1111779993&single=true&output=csv"
 URL_STUDENTS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?gid=1500993496&single=true&output=csv"
 URL_CONFIG = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?gid=939170192&single=true&output=csv"
 SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1jM5RGj_V2dxOfduViARSSKsYGO9LFslQydB5ympgjXA/edit"
 
-ENTRY_IDS = {
-    "id": "entry.140138051",
-    "name": "entry.1070948481",
-    "stage": "entry.1153840624",
-    "project": "entry.760419112",
-    "content": "entry.4763804"
-}
+ENTRY_IDS = {"id": "entry.140138051", "name": "entry.1070948481", "stage": "entry.1153840624",
+             "project": "entry.760419112", "content": "entry.4763804"}
 
 
 def get_safe_data(url):
     try:
         t = int(time.time())
-        df = pd.read_csv(f"{url}&cachebuster={t}", dtype=str).fillna("")
-        return df
+        return pd.read_csv(f"{url}&cachebuster={t}", dtype=str).fillna("")
     except:
         return pd.DataFrame()
 
@@ -34,7 +28,7 @@ st.markdown("<style>.stApp { direction: rtl; text-align: right; }</style>", unsa
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'role': None, 'id': None, 'name': None})
 
-# --- כניסה ---
+# --- כניסה (ללא שינוי) ---
 if not st.session_state['logged_in']:
     st.title("🎓 Project Master")
     t1, t2 = st.tabs(["🔑 תלמיד", "👨‍🏫 מורה"])
@@ -42,12 +36,10 @@ if not st.session_state['logged_in']:
         sid = st.text_input("תעודת זהות:").strip()
         if st.button("כניסה"):
             df_s = get_safe_data(URL_STUDENTS)
-            if not df_s.empty:
-                df_s.iloc[:, 0] = df_s.iloc[:, 0].astype(str).str.strip()
-                if sid in df_s.iloc[:, 0].values:
-                    sname = df_s[df_s.iloc[:, 0] == sid].iloc[0, 1]
-                    st.session_state.update({'logged_in': True, 'role': 'student', 'id': sid, 'name': sname})
-                    st.rerun()
+            if not df_s.empty and sid in df_s.iloc[:, 0].astype(str).str.strip().values:
+                sname = df_s[df_s.iloc[:, 0].astype(str).str.strip() == sid].iloc[0, 1]
+                st.session_state.update({'logged_in': True, 'role': 'student', 'id': sid, 'name': sname})
+                st.rerun()
             st.error("תעודת זהות לא נמצאה.")
     with t2:
         pwd = st.text_input("סיסמה:", type="password")
@@ -55,73 +47,108 @@ if not st.session_state['logged_in']:
             if pwd == "123":
                 st.session_state.update({'logged_in': True, 'role': 'teacher'})
                 st.rerun()
-
-# --- ממשק משתמש ---
 else:
     st.sidebar.title(f"שלום {st.session_state.get('name', 'המורה')}")
     if st.sidebar.button("🚪 התנתק"):
         st.session_state.clear()
         st.rerun()
 
+    # --- ממשק מורה (מפת כיתה) ---
     if st.session_state['role'] == 'teacher':
-        st.header("👨‍🏫 ממשק ניהול מורה")
-        st.link_button("📝 עריכת נתונים בגוגל", SHEET_EDIT_URL)
-        t_subs, t_stud, t_conf = st.tabs(["📊 הגשות", "👥 תלמידים", "📅 לוח זמנים"])
-        with t_subs:
-            st.dataframe(get_safe_data(URL_SUBS))
-        with t_stud:
-            st.table(get_safe_data(URL_STUDENTS))
-        with t_conf:
-            st.table(get_safe_data(URL_CONFIG))
+        st.header("👨‍🏫 לוח בקרה ומפת כיתה")
+        st.link_button("📝 פתח גיליון לאישור הגשות (הוסיפי עמודת 'סטטוס' בסוף)", SHEET_EDIT_URL)
 
+        tab_map, tab_subs, tab_stud = st.tabs(["🗺️ מפת כיתה", "📊 רשימת הגשות", "👥 תלמידים"])
+
+        df_subs = get_safe_data(URL_SUBS)
+        df_stud = get_safe_data(URL_STUDENTS)
+        df_conf = get_safe_data(URL_CONFIG)
+
+        with tab_map:
+            if not df_stud.empty and not df_conf.empty:
+                stages = df_conf.iloc[:, 0].tolist()
+                # יצירת מטריצה ריקה
+                map_data = []
+                for _, s_row in df_stud.iterrows():
+                    row = {"תלמיד": s_row.iloc[1]}
+                    for stage in stages:
+                        # בדיקה אם התלמיד הגיש את השלב הזה
+                        # (אנחנו מניחים: עמודה 1 = ת"ז, עמודה 3 = שלב, עמודה 5 = סטטוס אם הוספת)
+                        sub = df_subs[(df_subs.iloc[:, 1] == str(s_row.iloc[0])) & (df_subs.iloc[:, 3] == stage)]
+                        if not sub.empty:
+                            status = sub.iloc[-1, -1] if len(sub.columns) > 5 else "הוגש"
+                            if status == "מאושר":
+                                row[stage] = "✅"
+                            elif status == "לתיקון":
+                                row[stage] = "❌"
+                            else:
+                                row[stage] = "⏳"
+                        else:
+                            row[stage] = "⚪"
+                    map_data.append(row)
+
+                st.subheader("מצב התקדמות כיתתי")
+                st.table(pd.DataFrame(map_data))
+                st.caption("✅ מאושר | ⏳ הוגש/ממתין | ❌ לתיקון | ⚪ טרם הוגש")
+            else:
+                st.info("חסרים נתונים ליצירת מפה.")
+
+        with tab_subs:
+            st.dataframe(df_subs)
+
+        with tab_stud:
+            st.table(df_stud)
+
+    # --- ממשק תלמיד ---
     elif st.session_state['role'] == 'student':
         st.header(f"שלום {st.session_state['name']}")
-
-        # 1. טעינת נתונים
         df_conf = get_safe_data(URL_CONFIG)
         df_subs = get_safe_data(URL_SUBS)
 
         all_stages = df_conf.iloc[:, 0].tolist() if not df_conf.empty else ["שלב 1"]
 
-        # 2. מציאת השלבים שהתלמיד כבר הגיש
-        # אנחנו מניחים שהעמודה השנייה (אינדקס 1) בגיליון התגובות היא הת"ז
-        # והעמודה הרביעית (אינדקס 3) היא השלב (תלוי במבנה הפורם שלך)
-        submitted_stages = []
+        # זיהוי סטטוסים של התלמיד
+        st.sidebar.subheader("📍 הסטטוס שלך:")
+        submitted_dict = {}  # שלב -> סטטוס
         if not df_subs.empty:
-            # סינון הגשות של התלמיד הנוכחי
             my_subs = df_subs[df_subs.iloc[:, 1].astype(str).str.strip() == st.session_state['id']]
-            submitted_stages = my_subs.iloc[:, 3].unique().tolist()  # עמודת השלב בפורם
+            for _, r in my_subs.iterrows():
+                # לוקח את הסטטוס מהעמודה האחרונה אם קיימת
+                s_val = r.iloc[-1] if len(my_subs.columns) > 5 else "הוגש"
+                submitted_dict[r.iloc[3]] = s_val
 
-        # 3. לוגיקת סטטוסים בצד
-        st.sidebar.subheader("📍 מצב התקדמות:")
         allowed_stages = []
         found_next = False
-
         for s in all_stages:
-            if s in submitted_stages:
-                st.sidebar.write(f"✅ {s}")
-                allowed_stages.append(s)  # תמיד אפשר להגיש שוב שלב שכבר עשית
-            elif not found_next:
-                st.sidebar.write(f"⏳ **{s} (לביצוע)**")
+            status = submitted_dict.get(s, "לא הוגש")
+            if status == "מאושר":
+                st.sidebar.write(f"✅ {s}: מאושר")
+                allowed_stages.append(s)  # יכול להגיש שוב אם רוצה
+            elif status == "לתיקון":
+                st.sidebar.write(f"❌ {s}: דורש תיקון")
                 allowed_stages.append(s)
-                found_next = True  # השלב הראשון שלא הוגש הוא השלב הבא
+                found_next = True  # חייב לתקן לפני שעובר הלאה
+            elif status == "הוגש":
+                st.sidebar.write(f"⏳ {s}: ממתין לבדיקה")
+                allowed_stages.append(s)
+                found_next = True
+            elif not found_next:
+                st.sidebar.write(f"⚪ {s}: השלב הבא")
+                allowed_stages.append(s)
+                found_next = True
             else:
                 st.sidebar.write(f"🔒 {s}")
 
-        # 4. טופס הגשה מוגבל
-        with st.form("submission"):
-            stage = st.selectbox("בחר שלב להגשה (רק שלבים פתוחים):", allowed_stages)
+        with st.form("sub"):
+            stage = st.selectbox("בחר שלב להגשה:", allowed_stages)
             p_name = st.text_input("שם פרויקט:")
-            link = st.text_input("לינק לתוצר:")
-
-            if st.form_submit_button("🚀 שלח הגשה"):
+            link = st.text_input("לינק/תוכן:")
+            if st.form_submit_button("שלח"):
                 if p_name and link:
-                    data = {"id": st.session_state['id'], "name": st.session_state['name'],
-                            "stage": stage, "project": p_name, "content": link}
-                    requests.post(FORM_URL, data={ENTRY_IDS[k]: v for k, v in data.items()})
-                    st.success(f"שלב {stage} הוגש בהצלחה!")
+                    requests.post(FORM_URL, data={ENTRY_IDS[k]: v for k, v in
+                                                  {"id": st.session_state['id'], "name": st.session_state['name'],
+                                                   "stage": stage, "project": p_name, "content": link}.items()})
+                    st.success("הוגש בהצלחה!")
                     st.balloons()
                     time.sleep(1)
                     st.rerun()
-                else:
-                    st.error("נא למלא את כל השדות.")
