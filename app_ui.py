@@ -1,114 +1,129 @@
+#"https://docs.google.com/forms/d/e/1FAIpQLSf3vGFIikpAHVhZuSTPO04GdsP7BwxejG8lo-Voo0sKIXBdoA/viewform?usp=pp_url&entry.140138051=022168199&entry.1070948481=merry+geva&entry.1153840624=1&entry.760419112=cameras&entry.4763804=jkljsakal"
+
+
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import os
+import requests
 from datetime import datetime
 import time
 
-# --- הגדרות קבצים ---
-DB_FILE = "submissions.csv"
-STUDENTS_FILE = "students_list.csv"
-CONFIG_FILE = "system_config.csv"
+# --- הגדרות אבטחה וחיבור (החליפי בנתונים מהפורם שלך) ---
+# ה-URL שנגמר ב-formResponse
+
+FORM_URL = "https://docs.google.com/forms/d/e/18ZgQE2gaWfmIy_cryTeTKLFebUi0DPLopeDgA6IB8NI/formResponse"
+# FORM_ID = "18ZgQE2gaWfmIy_cryTeTKLFebUi0DPLopeDgA6IB8NI"
+
+# מזהי השדות (entry.xxxx) כפי שמופיעים ב-Pre-filled link של הפורם
+ENTRY_IDS = {
+    "id": "entry.140138051",  # שדה ת"ז
+    "name": "entry.1070948481",  # שדה שם התלמיד
+    "stage": "entry.1153840624",  # שדה שלב
+    "project": "entry.760419112",  # שדה שם הפרויקט
+    "content": "entry.4763804"  # שדה תיאור/לינק
+}
+
 TEACHER_PASSWORD = "123"
 
 # --- הגדרות דף ---
 st.set_page_config(page_title="Project Master Pro", layout="wide")
-st.markdown(
-    "<style>.stApp { direction: rtl; text-align: right; } div[st-decorator='sidebar'] { direction: rtl; }</style>",
-    unsafe_allow_html=True)
-
-# --- חיבור ל-Google Sheets ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-
-def get_data(worksheet_name, expected_cols):
-    try:
-        # פקודה ישירה שעוקפת את המטא-דאטה
-        df = conn.read(worksheet=worksheet_name, ttl=0)
-        if df is not None and not df.empty:
-            return df.astype(str)
-    except Exception as e:
-        # אם יש שגיאה (כמו ה-200 המעצבן), אנחנו לא מציגים אותה
-        # אלא פשוט מחזירים טבלה ריקה וממשיכים ל-CSV המקומי
-        pass
-    return pd.DataFrame(columns=expected_cols)
-
-def update_sheets(df, worksheet_name):
-    try:
-        st.cache_data.clear()
-        # המרה ל-DataFrame נקי בלי אינדקס
-        df_to_save = pd.DataFrame(df).astype(str)
-
-        # שימוש בחיבור הישיר לעדכון
-        conn.update(worksheet=worksheet_name, data=df_to_save)
-
-        st.success(f"✅ עודכן בהצלחה בגיליון גוגל ({worksheet_name})")
-        st.balloons()
-    except Exception as e:
-        st.error(f"❌ שגיאת כתיבה: {e}")
+st.markdown("""
+    <style>
+    .stApp { direction: rtl; text-align: right; }
+    div[st-decorator='sidebar'] { direction: rtl; }
+    .stTextInput input { text-align: right; }
+    </style>
+    """, unsafe_allow_html=True)
 
 
-def load_data(file, default_cols):
-    # מפה שמקשרת בין הקובץ ללשונית בגוגל
-    mapping = {
-        STUDENTS_FILE: "students",
-        DB_FILE: "submissions",
-        CONFIG_FILE: "config"
+# --- פונקציות עזר ---
+def submit_to_google_form(data):
+    """שליחה חרישית ל-Google Form ללא צורך בהרשאות מסובכות"""
+    form_data = {
+        ENTRY_IDS["id"]: data['id'],
+        ENTRY_IDS["name"]: data['name'],
+        ENTRY_IDS["stage"]: data['stage'],
+        ENTRY_IDS["project"]: data['project'],
+        ENTRY_IDS["content"]: data['content']
     }
-
-    # 1. נסיון קריאה מגוגל
-    if file in mapping:
-        df_google = get_data(mapping[file], default_cols)
-        if not df_google.empty:
-            return df_google
-
-    # 2. אם גוגל נכשל או ריק, קריאה מה-CSV המקומי (שקיים ב-GitHub)
-    if os.path.exists(file):
-        try:
-            return pd.read_csv(file, dtype={'ת"ז': str}).fillna("")
-        except:
-            return pd.DataFrame(columns=default_cols)
-
-    return pd.DataFrame(columns=default_cols)
-
-def save_data(df, file):
-    # 1. שמירה מקומית (תמיד טוב לגיבוי)
-    df.to_csv(file, index=False, encoding='utf-8-sig')
-
-    # 2. שליחה לגוגל
-    mapping = {
-        STUDENTS_FILE: "students",
-        DB_FILE: "submissions",
-        CONFIG_FILE: "config"
-    }
-    if file in mapping:
-        update_sheets(df, mapping[file])
-
-# --- DEBUG - בדיקת חיבור ---
-if st.sidebar.checkbox("בדיקת חיבור גוגל (Debug)"):
     try:
-        # ניסיון לקרוא רק את השם של הגיליון
-        spreadsheet_id = st.secrets["connections"]["gsheets"]["spreadsheet"]
-        st.sidebar.write(f"ID: {spreadsheet_id}")
-        # אם ה-inspect נכשל, ננסה פשוט לקרוא שורה אחת
-        test_read = conn.read(worksheet="students", nrows=1)
-        st.sidebar.success("✅ חיבור תקין לנתונים!")
-    except Exception as e:
-        st.sidebar.error(f"❌ שגיאת מטא-דאטה: {e}")
+        response = requests.post(FORM_URL, data=form_data)
+        return response.status_code == 200
+    except:
+        return False
 
-# --- טעינת נתונים ראשונית ---
-config_df = load_data(CONFIG_FILE, ["שלב", "תאריך יעד"])
-if config_df.empty:
-    config_df = pd.DataFrame([
-        {"שלב": "1. בחירת נושא", "תאריך יעד": "2026-03-01"},
-        {"שלב": "2. אפיון", "תאריך יעד": "2026-03-15"}
-    ])
 
-subs_df = load_data(DB_FILE,
-                    ["זמן הגשה", 'ת"ז', "סיסמה", "שם התלמיד", "שלב", "שם הפרויקט", "תיאור/לינק", "סטטוס", "הערות מורה",
-                     "סטטוס זמן"])
-students_df = load_data(STUDENTS_FILE, ["ת\"ז", "שם מלא"])
+# --- ניהול מצב (Session State) ---
+if 'logged_in' not in st.session_state:
+    st.session_state.update({'logged_in': False, 'role': None, 'user_id': None, 'user_name': None})
 
-# --- לוגיקת האפליקציה (המשך הקוד שלך) ---
-# (כאן מגיע שאר הקוד של הכניסה, ממשק מורה ותלמיד כפי שכתבת)
-# הערה: ודאי שבכל מקום שכתבת save_data(df, file) בקוד המקורי, זה נשאר ככה.
+# --- מסך כניסה ---
+if not st.session_state['logged_in']:
+    st.title("🎓 Project Master - כניסה מאובטחת")
+    tab1, tab2 = st.tabs(["🔑 כניסת תלמיד", "👨‍🏫 כניסת מורה"])
+
+    with tab1:
+        sid = st.text_input("תעודת זהות:", max_chars=9)
+        sname = st.text_input("שם מלא:")
+        if st.button("התחבר כתלמיד"):
+            if len(sid) == 9 and len(sname) > 1:
+                st.session_state.update({'logged_in': True, 'role': 'student', 'user_id': sid, 'user_name': sname})
+                st.rerun()
+            else:
+                st.error("אנא מלא תז תקינה ושם מלא ")
+
+    with tab2:
+        mpwd = st.text_input("סיסמת מורה:", type="password")
+        if st.button("התחבר כמורה"):
+            if mpwd == TEACHER_PASSWORD:
+                st.session_state.update({'logged_in': True, 'role': 'teacher'})
+                st.rerun()
+            else:
+                st.error("סיסמה שגויה")
+
+else:
+    # --- תפריט צד ---
+    st.sidebar.title(f"שלום, {st.session_state.get('user_name', 'מורה')}")
+    if st.sidebar.button("🚪 התנתק"):
+        st.session_state.clear()
+        st.rerun()
+
+    # --- ממשק תלמיד ---
+    if st.session_state['role'] == 'student':
+        st.header("🚀 הגשת תוצרים לפרויקט")
+
+        stages = ["1. בחירת נושא", "2. אפיון", "3. ניתוח", "4. עיצוב", "5. קידוד", "6. הגשה סופית"]
+        stage = st.selectbox("בחר שלב להגשה:", stages)
+
+        p_name = st.text_input("שם הפרויקט:")
+        content = st.text_area("תיאור הביצוע או קישור (GitHub/Drive):")
+
+        if st.button("שלח הגשה למורה", width='stretch'):
+            if not p_name or not content:
+                st.error("חובה למלא את כל השדות")
+            else:
+                submission_data = {
+                    "id": st.session_state['user_id'],
+                    "name": st.session_state['user_name'],
+                    "stage": stage,
+                    "project": p_name,
+                    "content": content
+                }
+
+            with st.spinner("שומר נתונים בבסיס הנתונים..."):
+                if submit_to_google_form(submission_data):
+                    st.success("✅ ההגשה נשלחה בהצלחה! המורה יראה זאת בגיליון שלו.")
+                    st.balloons()
+                    time.sleep(2)
+                else:
+                    st.error("תקלה טכנית בשליחה. ודא שהחיבור לאינטרנט תקין.")
+
+    # --- ממשק מורה ---
+    elif st.session_state['role'] == 'teacher':
+        st.header("👨‍🏫 ממשק ניהול מורה")
+        st.write("כדי לראות את ההגשות, היכנסי לגיליון התגובות של ה-Google Form שלך.")
+
+        st.info("💡 בשיטה זו, הנתונים נשמרים ישירות בגיליון גוגל שרק לך יש גישה אליו.")
+
+        # אפשר להוסיף כאן כפתור שיפתח למורה את הגיליון בלינק ישיר
+        if st.button("פתח גיליון הגשות (Google Sheets)"):
+            st.write("לינק לגיליון שלך כאן...")
