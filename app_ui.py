@@ -39,11 +39,22 @@ st.markdown("""
 
 # --- פונקציות נתונים ---
 def load_data_from_google():
-    """טוען את כל ההגשות מהלינק הציבורי שפרסמת"""
+    """טוען את הנתונים מלינק ה-CSV הציבורי ללא זיכרון מטמון"""
     try:
-        df = pd.read_csv(SHEET_CSV_URL)
+        # הוספת פרמטר אקראי בסוף ה-URL כדי להכריח את גוגל לשלוח נתונים טריים
+        t = int(time.time())
+        url_with_cache_buster = f"{SHEET_CSV_URL}&cachebuster={t}"
+
+        # קריאת ה-CSV
+        df = pd.read_csv(url_with_cache_buster)
+
+        if df.empty:
+            return pd.DataFrame()
         return df
     except Exception as e:
+        # אם יש שגיאה, נציג אותה רק למורה כדי שתדעי מה קורה
+        if st.session_state.get('role') == 'teacher':
+            st.sidebar.error(f"פרטי השגיאה: {e}")
         return pd.DataFrame()
 
 
