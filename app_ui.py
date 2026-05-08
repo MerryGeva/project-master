@@ -10,7 +10,7 @@ URL_STUDENTS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu
 URL_CONFIG = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLSrqx9zZyH8Olu8g_RJOkFjgrvnLgVAL6N2tmTjsPlzF_off6SmoOgDaUFFqBMtwkdcwubqcP7xEy/pub?gid=939170192&single=true&output=csv"
 
 # הלינק לעריכה בדרייב (זה שמופיע לך למעלה בדפדפן כשאת בתוך השייטס)
-SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1jM5RGj_V2dxOfduViARSSKsYGO9LFslQydB5ympgjXA/edit"
+SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1cNixCctWeF2k_HkJ7OECzVp8M0djZ3upfYKStMmp36c/edit"
 
 ENTRY_IDS = {
     "id": "entry.140138051",
