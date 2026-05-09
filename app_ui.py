@@ -50,7 +50,13 @@ if not st.session_state['logged_in']:
             if not df_stud.empty:
                 # פונקציה פנימית לניקוי מוחלט של מחרוזת מכל מה שאינו ספרה
                 def clean_val(v):
-                    return ''.join(filter(str.isdigit, str(v)))
+                    # הפיכה לטקסט
+                    s = str(v).strip()
+                    # אם זה מספר עשרוני שמסתיים ב-.0 (כמו 123.0), נוריד את ה-.0
+                    if s.endswith('.0'):
+                        s = s[:-2]
+                    # עכשיו נשאיר רק ספרות
+                    return ''.join(filter(str.isdigit, s))
 
 
                 # ניקוי הקלט של המשתמש
