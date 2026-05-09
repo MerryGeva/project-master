@@ -48,21 +48,29 @@ if not st.session_state['logged_in']:
             _, df_stud, _ = load_all_data()
 
             if not df_stud.empty:
-                # 1. ניקוי הקלט של המשתמש (הורדת אפס מוביל כדי להשוות למספר נקי)
-                clean_sid = sid_input.lstrip('0')
+                # פונקציה פנימית לניקוי מוחלט של מחרוזת מכל מה שאינו ספרה
+                def clean_val(v):
+                    return ''.join(filter(str.isdigit, str(v)))
 
-                # 2. יצירת רשימה של כל תעודות הזהות מהגיליון כטקסט נקי
-                # אנחנו הופכים את העמודה לטקסט, מורידים אפסים ומשווים
+
+                # ניקוי הקלט של המשתמש
+                user_id_clean = clean_val(sid_input).lstrip('0')
+
                 found_user = None
+                # רשימה לדיבג (נציג אותה רק אם לא נמצא)
+                all_ids_in_db = []
+
                 for index, row in df_stud.iterrows():
-                    current_id = str(row.iloc[0]).strip().lstrip('0')
-                    if clean_sid == current_id and clean_sid != "":
+                    db_id_raw = str(row.iloc[0])
+                    db_id_clean = clean_val(db_id_raw).lstrip('0')
+                    all_ids_in_db.append(db_id_clean)
+
+                    if user_id_clean == db_id_clean and user_id_clean != "":
                         found_user = row
                         break
 
                 if found_user is not None:
                     sname = found_user.iloc[1]
-                    # שומרים ב-session_state את הגרסה המקורית שהוקלדה
                     st.session_state.update({
                         'logged_in': True,
                         'role': 'student',
@@ -73,9 +81,13 @@ if not st.session_state['logged_in']:
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error(f"תעודת זהות '{sid_input}' לא נמצאה במערכת.")
+                    st.error(f"תעודת זהות '{sid_input}' לא נמצאה.")
+                    # זה יעזור לנו להבין מה המערכת "רואה" בגיליון שלך
+                    with st.expander("בדיקת סנכרון (למורה בלבד)"):
+                        st.write("מה שהקלדת (נקי):", user_id_clean)
+                        st.write("מה שיש בגיליון (נקי):", all_ids_in_db)
             else:
-                st.error("רשימת התלמידים בגיליון ריקה.")
+                st.error("לא הצלחתי לקרוא נתונים מגיליון students.")
     with t2:
         pwd = st.text_input("סיסמת מורה:", type="password")
         if st.button("כניסה למערכת הניהול"):
