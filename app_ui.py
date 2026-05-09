@@ -42,15 +42,31 @@ if not st.session_state['logged_in']:
     t1, t2 = st.tabs(["🔑 כניסת תלמיד", "👨‍🏫 כניסת מורה"])
 
     with t1:
-        sid = st.text_input("הקלד תעודת זהות:").strip()
+        sid = st.text_input("הקלד תעודת זהות (כולל אפס אם יש):").strip()
         if st.button("התחבר"):
             _, df_stud, _ = load_all_data()
-            if not df_stud.empty and sid in df_stud.iloc[:, 0].astype(str).str.strip().values:
-                sname = df_stud[df_stud.iloc[:, 0].astype(str).str.strip() == sid].iloc[0, 1]
-                st.session_state.update({'logged_in': True, 'role': 'student', 'id': sid, 'name': sname})
-                st.rerun()
-            else:
-                st.error("תעודת זהות לא קיימת במערכת.")
+
+            if not df_stud.empty:
+                # הפיכת ה-Input של התלמיד לטקסט נקי
+                user_id = str(sid).strip()
+
+                # הפיכת עמודת הת"ז בגיליון לטקסט באורך 9 תווים (מוסיף אפסים אם נמחקו בגוגל)
+                # אנחנו מניחים שהעמודה הראשונה (index 0) היא ת"ז
+                df_stud.iloc[:, 0] = df_stud.iloc[:, 0].astype(str).str.strip().str.zfill(9)
+                allowed_ids = df_stud.iloc[:, 0].values
+
+                # בדיקה גם מול הגרסה עם האפס וגם בלי (ליתר ביטחון)
+                if user_id in allowed_ids or user_id.zfill(9) in allowed_ids:
+                    # מציאת השם (משתמשים ב-zfill כדי למצוא את השורה הנכונה)
+                    match_id = user_id if user_id in allowed_ids else user_id.zfill(9)
+                    sname = df_stud[df_stud.iloc[:, 0] == match_id].iloc[0, 1]
+
+                    st.session_state.update({'logged_in': True, 'role': 'student', 'id': match_id, 'name': sname})
+                    st.success(f"שלום {sname}!")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error(f"תעודת זהות '{user_id}' לא נמצאה.")
 
     with t2:
         pwd = st.text_input("סיסמת מורה:", type="password")
