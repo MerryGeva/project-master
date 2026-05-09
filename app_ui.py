@@ -97,8 +97,11 @@ else:
 
         with tab_approve:
             st.subheader("📥 הגשות חדשות")
-            # סינון רק של הגשות שסטטוסן "הוגש"
-            pending = df_subs[df_subs['סטטוס'] == 'הוגש']
+            # עבודה על עותק של הנתונים כדי לא לשבש את המקור בזמן הלחיצות
+            if 'temp_subs' not in st.session_state:
+                st.session_state.temp_subs = df_subs.copy()
+
+            pending = st.session_state.temp_subs[st.session_state.temp_subs['סטטוס'] == 'הוגש']
 
             if pending.empty:
                 st.info("אין הגשות חדשות כרגע.")
@@ -114,39 +117,38 @@ else:
                             st.markdown(f"**תוכן:**\n{main_content}")
                             if link_url:
                                 st.markdown(
-                                    f"""<div class='link-box'>🔗 <b>קישור לתוצר:</b> <a href='{link_url}' target='_blank'>{link_url}</a></div>""",
+                                    f"""<div class='link-box'>🔗 <b>קישור:</b> <a href='{link_url}' target='_blank'>{link_url}</a></div>""",
                                     unsafe_allow_html=True)
                         with c2:
-                            # פונקציית עדכון בטוחה לפי אינדקס השורה המקורי
+                            # כפתור אישור
                             if st.button("אשר ✅", key=f"ok_{idx}"):
                                 try:
-                                    # טעינה מחדש של הגיליון כדי לוודא שאנחנו מעדכנים את השורה הנכונה
-                                    current_df = conn.read(worksheet="Form Responses 1", ttl=0)
-                                    current_df.at[idx, 'סטטוס'] = "מאושר"
-                                    conn.update(worksheet="Form Responses 1", data=current_df)
+                                    # עדכון מקומי ב-DataFrame הקיים בזיכרון
+                                    df_subs.at[idx, 'סטטוס'] = "מאושר"
+                                    # שליחה אחת לגוגל שייטס
+                                    conn.update(worksheet="Form Responses 1", data=df_subs)
+                                    st.success("אושר בהצלחה!")
+                                    # רענון הזיכרון המקומי
                                     st.cache_data.clear()
-                                    st.success("אושר!")
-                                    time.sleep(1)
+                                    time.sleep(0.5)  # השהייה קלה למניעת הצפה
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"שגיאה בעדכון: {e}")
+                                    if "429" in str(e):
+                                        st.error("גוגל חסמה את הבקשה עקב עומס. המתן 5 שניות ונסה שוב.")
+                                    else:
+                                        st.error(f"שגיאה: {e}")
 
+                            # כפתור לתיקון
                             if st.button("לתיקון ❌", key=f"fix_{idx}"):
                                 try:
-                                    current_df = conn.read(worksheet="Form Responses 1", ttl=0)
-                                    current_df.at[idx, 'סטטוס'] = "לתיקון"
-                                    conn.update(worksheet="Form Responses 1", data=current_df)
-                                    st.cache_data.clear()
+                                    df_subs.at[idx, 'סטטוס'] = "לתיקון"
+                                    conn.update(worksheet="Form Responses 1", data=df_subs)
                                     st.warning("הוחזר לתיקון")
-                                    time.sleep(1)
+                                    st.cache_data.clear()
+                                    time.sleep(0.5)
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"שגיאה בעדכון: {e}")
-
-            st.markdown("---")
-            st.subheader("📜 היסטוריה")
-            st.dataframe(df_subs[df_subs['סטטוס'].isin(['מאושר', 'לתיקון'])].iloc[::-1], use_container_width=True)
-
+                                    st.error(f"שגיאה: {e}")
         with tab_map:
             if not df_stud.empty:
                 map_list = []
@@ -249,7 +251,7 @@ else:
 
                 if st.form_submit_button("🚀 שלח הגשה"):
                     if not p_name or not desc:
-                        st.warning("נא למלא שם פרויקט ותיאור.")
+                        st.warning("נא למלא קישור למסמך מפורט ותיאור.")
                     elif current_stage != all_stages[0] and not link:
                         st.error("חובה להוסיף קישור!")
                     else:
