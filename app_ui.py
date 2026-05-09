@@ -31,7 +31,7 @@ def load_all_data():
         st.info(f"פרטי השגיאה הטכנית: {e}")
         st.stop() # עוצר את האפליקציה במקום לקרוס
 
-        
+
 # --- ניהול התחברות ---
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'role': None, 'id': None, 'name': None})
@@ -127,12 +127,11 @@ else:
 
         with tab_config:
             st.subheader("ניהול שלבים וטכנולוגיות")
-            # מגדירים לכל העמודות להיות מסוג טקסט כדי למנוע חסימה של אותיות
+            # מגדירים ידנית רק את העמודות שצריכות טקסט
             edited_conf = st.data_editor(
                 df_conf,
                 num_rows="dynamic",
-                key="conf_editor",
-                column_config={col: st.column_config.TextColumn(col) for col in df_conf.columns}
+                key="conf_editor"
             )
             if st.button("שמור הגדרות"):
                 conn.update(worksheet="config", data=edited_conf)
@@ -140,14 +139,15 @@ else:
 
         with tab_students:
             st.subheader("ניהול רשימת תלמידים")
-            # גם כאן, מוודאים שתעודת הזהות והשם יטופלו כטקסט
+            # כאן הכי חשוב שתעודת הזהות תישמר כטקסט
             edited_studs = st.data_editor(
                 df_stud,
                 num_rows="dynamic",
-                key="stud_editor",
-                column_config={col: st.column_config.TextColumn(col) for col in df_stud.columns}
+                key="stud_editor"
             )
             if st.button("עדכן רשימת תלמידים"):
+                # הפיכת עמודת תעודת הזהות לטקסט לפני השמירה כדי למנוע בעיות של מספרים
+                edited_studs.iloc[:, 0] = edited_studs.iloc[:, 0].astype(str)
                 conn.update(worksheet="students", data=edited_studs)
                 st.success("הרשימה עודכנה!")
 
