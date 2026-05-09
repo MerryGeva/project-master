@@ -39,15 +39,13 @@ def normalize_id(v):
     return s.zfill(9)
 
 
-@st.cache_data(ttl=10)  # העלאת ה-TTL ל-10 שניות להורדת עומס
+@st.cache_data(ttl=10)
 def load_all_data():
-    """ניסיון טעינה עדין יותר"""
     try:
         subs = conn.read(worksheet="Form Responses 1", ttl=0).fillna("")
         studs = conn.read(worksheet="students", ttl=0).fillna("")
         conf = conn.read(worksheet="config", ttl=0).fillna("")
 
-        # ניקוי שמות עמודות
         for df in [subs, studs, conf]:
             df.columns = [str(c).strip() for c in df.columns]
 
@@ -56,20 +54,15 @@ def load_all_data():
             if col not in subs.columns: subs[col] = ""
 
         return subs, studs, conf, True
-    except Exception as e:
-        # במקום st.stop(), נחזיר דאטה ריק וסימון שגיאה
+    except Exception:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), False
 
 
-# טעינה
 df_subs, df_stud, df_conf, success = load_all_data()
 
-# במקום לעצור הכל, נציג אזהרה אם הטעינה נכשלה
-if not success:
-    st.warning("⚠️ גוגל לא עונה לרגע. מנסה להתחבר שוב ברקע... (אפשר לנסות לרענן פעם אחת)")
-    # אם אין נתונים בכלל, רק אז נעצור
-    if df_subs.empty:
-        st.stop()
+if not success and df_subs.empty:
+    st.warning("⚠️ גוגל לא עונה לרגע. מנסה להתחבר שוב...")
+    st.stop()
 
 # שליפת הגדרות
 if not df_conf.empty and "שלב" in df_conf.columns:
@@ -100,7 +93,7 @@ if not st.session_state['logged_in']:
                     {'logged_in': True, 'role': 'student', 'id': u_norm, 'name': str(found_user.iloc[1])})
                 st.rerun()
             else:
-                st.error(f"תעודת זהות לא נמצאה. (נסה להזין שוב)")
+                st.error("תעודת זהות לא נמצאה.")
     with t2:
         pwd = st.text_input("סיסמת מורה:", type="password")
         if st.button("כניסה"):
@@ -116,21 +109,12 @@ else:
             st.session_state.clear();
             st.rerun()
 
-        if st.session_state['role'] == 'student':
-            st.markdown("---")
-            st.subheader("📍 התקדמות")
-            my_id = normalize_id(st.session_state['id'])
-            my_s = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
-            for s in all_stages:
-                stat = my_s[my_s['שלב'] == s].iloc[-1]['סטטוס'] if not my_s[my_s['שלב'] == s].empty else ""
-                icon = "✅" if stat == "מאושר" else ("❌" if stat == "לתיקון" else ("⏳" if stat == "הוגש" else "⚪"))
-                st.write(f"{icon} {s}")
-
     if st.session_state['role'] == 'teacher':
         st.header("👨‍🏫 לוח בקרה למורה")
         t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפת כיתה", "✅ אישור הגשות", "⚙️ הגדרות", "👥 תלמידים"])
 
         with t_approve:
+            st.subheader("📥 הגשות חדשות לבדיקה")
             pending = df_subs[df_subs['סטטוס'] == 'הוגש']
             if pending.empty:
                 st.info("אין הגשות חדשות.")
@@ -144,25 +128,36 @@ else:
                         c1, c2 = st.columns(2)
                         if c1.button("אשר ✅", key=f"ok_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "מאושר"
-                            try:
-                                conn.update(worksheet="Form Responses 1", data=df_subs)
-                                st.cache_data.clear();
-                                st.rerun()
-                            except:
-                                st.error("גוגל עמוס, נסה שוב בעוד 2 שניות.")
+                            conn.update(worksheet="Form Responses 1", data=df_subs)
+                            st.cache_data.clear();
+                            st.rerun()
                         if c2.button("לתיקון ❌", key=f"fix_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "לתיקון"
-                            try:
-                                conn.update(worksheet="Form Responses 1", data=df_subs)
-                                st.cache_data.clear();
-                                st.rerun()
-                            except:
-                                st.error("גוגל עמוס, נסה שוב בעוד 2 שניות.")
+                            conn.update(worksheet="Form Responses 1", data=df_subs)
+                            st.cache_data.clear();
+                            st.rerun()
+
             st.markdown("---")
-            st.subheader("📜 כל ההגשות")
-            st.dataframe(df_subs.iloc[::-1], use_container_width=True, hide_index=True)
+            st.subheader("📜 היסטוריית הגשות וחיפוש")
+
+            # --- מנגנון סינון היסטוריה ---
+            col_search, col_filter = st.columns([2, 1])
+            search_query = col_search.text_input("🔎 חיפוש לפי שם תלמיד או פרויקט:")
+            status_filter = col_filter.selectbox("מצב הגשה:", ["הכל", "מאושר", "לתיקון", "הוגש"])
+
+            df_history = df_subs.copy()
+            if status_filter != "הכל":
+                df_history = df_history[df_history['סטטוס'] == status_filter]
+            if search_query:
+                df_history = df_history[
+                    df_history['שם התלמיד'].str.contains(search_query, case=False, na=False) |
+                    df_history['שם הפרויקט'].str.contains(search_query, case=False, na=False)
+                    ]
+
+            st.dataframe(df_history.iloc[::-1], use_container_width=True, hide_index=True)
 
         with t_map:
+            # (קוד המפה נשאר זהה...)
             if not df_stud.empty:
                 map_d = []
                 for _, s_row in df_stud.iterrows():
@@ -199,8 +194,7 @@ else:
         for s in all_stages:
             s_sub = my_subs[my_subs['שלב'] == s]
             stt = s_sub.iloc[-1]['סטטוס'] if not s_sub.empty else ""
-            if stt in ["", "לתיקון"]: curr_stage, curr_stat = s, stt; break
-            if stt == "הוגש": curr_stage, curr_stat = s, stt; break
+            if stt in ["", "לתיקון", "הוגש"]: curr_stage, curr_stat = s, stt; break
 
         st.header(f"שלום {st.session_state['name']}")
         if curr_stat == "הוגש":
@@ -222,12 +216,9 @@ else:
                                  "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'],
                                  "שלב": curr_stage, "שם הפרויקט": p_n,
                                  "תוכן": f"טכנולוגיות: {', '.join(techs)}\n{desc}", "קישור": link, "סטטוס": "הוגש"}
-                        try:
-                            conn.update(worksheet="Form Responses 1",
-                                        data=pd.concat([df_subs, pd.DataFrame([new_r])], ignore_index=True))
-                            st.balloons();
-                            st.cache_data.clear();
-                            time.sleep(1);
-                            st.rerun()
-                        except:
-                            st.error("שגיאה בשליחה לגוגל, נסה שוב בעוד רגע.")
+                        conn.update(worksheet="Form Responses 1",
+                                    data=pd.concat([df_subs, pd.DataFrame([new_r])], ignore_index=True))
+                        st.balloons();
+                        st.cache_data.clear();
+                        time.sleep(1);
+                        st.rerun()
