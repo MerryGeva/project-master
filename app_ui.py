@@ -20,12 +20,18 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # פונקציות עזר לקריאת הנתונים מהלשוניות השונות
 def load_all_data():
-    subs = conn.read(worksheet="Form Responses 1", ttl="0")  # הגשות (ללא קאש כדי שיהיה עדכני)
-    studs = conn.read(worksheet="students", ttl="1m")  # רשימת תלמידים
-    conf = conn.read(worksheet="config", ttl="1m")  # שלבים וטכנולוגיות
-    return subs.fillna(""), studs.fillna(""), conf.fillna("")
+    try:
+        # כאן את חייבת לוודא שהשמות תואמים למה שכתוב בלשוניות למטה בשייטס!
+        subs = conn.read(worksheet="Form Responses 1", ttl=0)
+        studs = conn.read(worksheet="students", ttl=0)
+        conf = conn.read(worksheet="config", ttl=0)
+        return subs.fillna(""), studs.fillna(""), conf.fillna("")
+    except Exception as e:
+        st.error(f"שגיאה: לא מצאתי את אחת הלשוניות בגיליון. ודאי שהשמות 'Form Responses 1', 'students' ו-'config' קיימים.")
+        st.info(f"פרטי השגיאה הטכנית: {e}")
+        st.stop() # עוצר את האפליקציה במקום לקרוס
 
-
+        
 # --- ניהול התחברות ---
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'role': None, 'id': None, 'name': None})
@@ -120,18 +126,30 @@ else:
                             st.rerun()
 
         with tab_config:
-            st.subheader("עריכת שלבים וטכנולוגיות")
-            edited_conf = st.data_editor(df_conf, num_rows="dynamic")
-            if st.button("שמור שינויים בהגדרות"):
+            st.subheader("ניהול שלבים וטכנולוגיות")
+            # מגדירים לכל העמודות להיות מסוג טקסט כדי למנוע חסימה של אותיות
+            edited_conf = st.data_editor(
+                df_conf,
+                num_rows="dynamic",
+                key="conf_editor",
+                column_config={col: st.column_config.TextColumn(col) for col in df_conf.columns}
+            )
+            if st.button("שמור הגדרות"):
                 conn.update(worksheet="config", data=edited_conf)
-                st.success("ההגדרות נשמרו!")
+                st.success("הוגדר בהצלחה!")
 
         with tab_students:
-            st.subheader("רשימת תלמידים")
-            edited_studs = st.data_editor(df_stud, num_rows="dynamic")
-            if st.button("שמור רשימת תלמידים"):
+            st.subheader("ניהול רשימת תלמידים")
+            # גם כאן, מוודאים שתעודת הזהות והשם יטופלו כטקסט
+            edited_studs = st.data_editor(
+                df_stud,
+                num_rows="dynamic",
+                key="stud_editor",
+                column_config={col: st.column_config.TextColumn(col) for col in df_stud.columns}
+            )
+            if st.button("עדכן רשימת תלמידים"):
                 conn.update(worksheet="students", data=edited_studs)
-                st.success("רשימת התלמידים עודכנה!")
+                st.success("הרשימה עודכנה!")
 
     # --- ממשק תלמיד ---
     elif st.session_state['role'] == 'student':
