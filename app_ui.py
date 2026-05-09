@@ -90,7 +90,9 @@ else:
 
         with tab_approve:
             st.subheader("📥 הגשות חדשות להערכה")
+            # סינון של הגשות בסטטוס "הוגש" בלבד
             pending = df_subs[df_subs['סטטוס'] == 'הוגש']
+
             if pending.empty:
                 st.info("אין הגשות חדשות הממתינות לאישור.")
             else:
@@ -100,22 +102,22 @@ else:
                         with c1:
                             st.markdown(f"### פרויקט: {row['שם הפרויקט']}")
 
-                            # הפרדת התוכן כדי למצוא את הלינק
+                            # חילוץ הקישור מהתוכן
                             parts = row['תוכן'].split("לינק: ")
                             main_content = parts[0]
                             link_url = parts[1].strip() if len(parts) > 1 else ""
 
                             st.markdown(f"**פרטי ההגשה:**\n{main_content}")
 
-                            # הצגת הקישור ככפתור בולט או לינק לחיץ
+                            # הצגת קישור לחיץ ובולט
                             if link_url:
-                                # הבלטה של הקישור בתוך תיבה כחולה ולינק לחיץ
                                 st.markdown(f"""
                                 <div style="background-color: #e1f5fe; padding: 15px; border-radius: 5px; border-right: 5px solid #03a9f4;">
                                     <span style="font-weight: bold;">🔗 קישור לתוצר:</span><br>
-                                    <a href="{link_url}" target="_blank" style="color: #0288d1; text-decoration: underline; word-break: break-all;">
-                                        {link_url}
+                                    <a href="{link_url}" target="_blank" style="color: #0288d1; text-decoration: underline; font-size: 1.1em;">
+                                        לחץ כאן לפתיחת המסמך/פרויקט
                                     </a>
+                                    <br><small style="color: #666;">{link_url}</small>
                                 </div>
                                 """, unsafe_allow_html=True)
                             else:
@@ -127,7 +129,7 @@ else:
                                 df_subs.at[idx, 'סטטוס'] = "מאושר"
                                 conn.update(worksheet="Form Responses 1", data=df_subs)
                                 st.cache_data.clear()
-                                st.success("אושר!")
+                                st.success("ההגשה אושרה!")
                                 time.sleep(1)
                                 st.rerun()
 
@@ -135,9 +137,41 @@ else:
                                 df_subs.at[idx, 'סטטוס'] = "לתיקון"
                                 conn.update(worksheet="Form Responses 1", data=df_subs)
                                 st.cache_data.clear()
-                                st.warning("הוחזר לתיקון")
+                                st.warning("הבקשה הוחזרה לתיקון")
                                 time.sleep(1)
                                 st.rerun()
+
+            # --- החלק שהוחזר: היסטוריית הגשות ---
+            st.markdown("---")
+            st.subheader("📜 היסטוריית הגשות קודמות")
+
+            # מציג את כל מה שהוא לא בסטטוס "הוגש" (כלומר מאושר או לתיקון)
+            history = df_subs[df_subs['סטטוס'].isin(['מאושר', 'לתיקון'])]
+
+            if history.empty:
+                st.write("טרם בוצעו הגשות קודמות.")
+            else:
+                # הפיכת הסדר כדי שההגשה הכי חדשה תהיה למעלה
+                history_display = history.iloc[::-1].copy()
+
+                # עיצוב הטבלה להצגה נקייה
+                st.dataframe(
+                    history_display[['Timestamp', 'שם התלמיד', 'שלב', 'שם הפרויקט', 'סטטוס']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # אפשרות למורה לראות פירוט של הגשה ישנה אם הוא רוצה
+                with st.expander("🔍 חיפוש וצפייה בתוכן של הגשות קודמות"):
+                    search_name = st.selectbox("בחר תלמיד לצפייה בהיסטוריה:",
+                                               ["הכל"] + list(history['שם התלמיד'].unique()))
+
+                    filtered_history = history if search_name == "הכל" else history[history['שם התלמיד'] == search_name]
+
+                    for h_idx, h_row in filtered_history.iloc[::-1].head(10).iterrows():
+                        st.text(f"[{h_row['Timestamp']}] {h_row['שלב']} - {h_row['סטטוס']}")
+                        st.caption(h_row['תוכן'])
+                        st.markdown("---")
 
         with tab_map:
             # (קוד מפת הכיתה נשאר זהה)
