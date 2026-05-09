@@ -37,12 +37,12 @@ def load_all_data():
         studs = conn.read(worksheet="students", ttl=0).fillna("")
         conf = conn.read(worksheet="config", ttl=0).fillna("")
 
-        # ניקוי שמות עמודות מרווחים מיותרים
+        # ניקוי שמות עמודות
         subs.columns = [str(c).strip() for c in subs.columns]
         studs.columns = [str(c).strip() for c in studs.columns]
         conf.columns = [str(c).strip() for c in conf.columns]
 
-        # וידוא עמודות קריטיות בטבלת הגשות
+        # וידוא עמודות קריטיות
         cols = ["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "קישור", "סטטוס"]
         for col in cols:
             if col not in subs.columns: subs[col] = ""
@@ -102,130 +102,185 @@ if not st.session_state['logged_in']:
                 st.session_state.update({'logged_in': True, 'role': 'teacher', 'name': 'המורה'})
                 st.rerun()
 
-# --- 5. ממשק מורה ---
-elif st.session_state['role'] == 'teacher':
-    st.header("👨‍🏫 לוח בקרה למורה")
-    t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפת כיתה", "✅ אישור הגשות", "⚙️ הגדרות", "👥 תלמידים"])
-
-    with t_approve:
-        st.subheader("📥 הגשות חדשות")
-        pending = df_subs[df_subs['סטטוס'] == 'הוגש']
-        if pending.empty:
-            st.info("אין הגשות חדשות.")
-        else:
-            for idx, row in pending.iterrows():
-                with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
-                    c1, c2 = st.columns([2, 1])
-                    with c1:
-                        st.markdown(f"**פרויקט:** {row['שם הפרויקט']}")
-                        st.markdown(f"**תיאור:**\n{row['תוכן']}")
-                        if str(row['קישור']).strip():
-                            st.markdown(
-                                f"""<div class='link-box'>🔗 <a href='{row['קישור']}' target='_blank'>קישור לתוצר</a></div>""",
-                                unsafe_allow_html=True)
-                    with c2:
-                        if st.button("אשר ✅", key=f"ok_{idx}"):
-                            df_subs.at[idx, 'סטטוס'] = "מאושר"
-                            conn.update(worksheet="Form Responses 1", data=df_subs)
-                            st.cache_data.clear();
-                            st.success("אושר!");
-                            time.sleep(1);
-                            st.rerun()
-                        if st.button("לתיקון ❌", key=f"fix_{idx}"):
-                            df_subs.at[idx, 'סטטוס'] = "לתיקון"
-                            conn.update(worksheet="Form Responses 1", data=df_subs)
-                            st.cache_data.clear();
-                            st.warning("הוחזר לתיקון");
-                            time.sleep(1);
-                            st.rerun()
-
+# --- 5. ממשק לאחר התחברות (מורה/תלמיד) ---
+else:
+    # סרגל צדדי משותף
+    with st.sidebar:
+        st.title(f"שלום, {st.session_state['name']}")
+        if st.button("🚪 התנתק"):
+            st.session_state.update({'logged_in': False, 'role': None, 'id': None, 'name': None})
+            st.rerun()
         st.markdown("---")
-        st.subheader("📜 היסטוריה")
-        st.dataframe(df_subs[df_subs['סטטוס'].isin(['מאושר', 'לתיקון'])].iloc[::-1], use_container_width=True,
-                     hide_index=True)
 
-    with t_map:
-        if not df_stud.empty:
-            map_list = []
-            for _, s_row in df_stud.iterrows():
-                sid = clean_val(s_row.get('תעודת זהות', s_row.iloc[0])).lstrip('0')
-                row_map = {"תלמיד": s_row.get('שם התלמיד', s_row.iloc[1])}
-                for stage in all_stages:
-                    sub = df_subs[(df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == sid) & (
-                                df_subs['שלב'] == stage)]
-                    status = sub.iloc[-1]['סטטוס'] if not sub.empty else "⚪"
-                    row_map[stage] = "✅" if status == "מאושר" else (
-                        "❌" if status == "לתיקון" else ("⏳" if status == "הוגש" else "⚪"))
-                map_list.append(row_map)
-            st.table(pd.DataFrame(map_list))
+        # הצגת התקדמות בסרגל הצדדי (רק לתלמיד)
+        if st.session_state['role'] == 'student':
+            st.subheader("📍 ההתקדמות שלי")
+            my_id = clean_val(st.session_state['id']).lstrip('0')
+            my_subs = df_subs[df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == my_id]
+            today = datetime.now()
 
-    with t_studs:
-        st.subheader("👥 ניהול תלמידים")
-        edited_s = st.data_editor(df_stud, num_rows="dynamic", key="edit_s")
-        if st.button("💾 שמור תלמידים"):
-            conn.update(worksheet="students", data=edited_s);
-            st.cache_data.clear();
-            st.rerun()
+            for i, stage in enumerate(all_stages):
+                sub = my_subs[my_subs['שלב'] == stage]
+                status = sub.iloc[-1]['סטטוס'] if not sub.empty else ""
+                dl_str = deadlines[i] if i < len(deadlines) else ""
 
-    with t_config:
-        st.subheader("⚙️ הגדרות מערכת")
-        edited_c = st.data_editor(df_conf, num_rows="dynamic", key="edit_c")
-        if st.button("💾 שמור הגדרות"):
-            conn.update(worksheet="config", data=edited_c);
-            st.cache_data.clear();
-            st.rerun()
+                # בדיקת איחור
+                overdue = False
+                if dl_str and status != "מאושר":
+                    try:
+                        if pd.to_datetime(dl_str, dayfirst=True) < today: overdue = True
+                    except:
+                        pass
 
-# --- 6. ממשק תלמיד ---
-elif st.session_state['role'] == 'student':
-    my_id = clean_val(st.session_state['id']).lstrip('0')
-    my_subs = df_subs[df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == my_id]
+                icon = "✅" if status == "מאושר" else ("❌" if status == "לתיקון" else ("⏳" if status == "הוגש" else "⚪"))
+                label = f"{icon} {stage}" + (f" ({dl_str})" if dl_str else "")
 
-    current_stage, current_status = all_stages[0], ""
-    for s in all_stages:
-        sub = my_subs[my_subs['שלב'] == s];
-        stat = sub.iloc[-1]['סטטוס'] if not sub.empty else ""
-        if stat == "לתיקון":
-            current_stage, current_status = s, stat; break
-        elif stat != "מאושר":
-            current_stage, current_status = s, stat; break
-
-    st.header(f"שלום {st.session_state['name']}")
-
-    if current_status == "הוגש":
-        st.markdown(f"<div class='pending-notice'>⏳ שלב <b>{current_stage}</b> בבדיקה.</div>", unsafe_allow_html=True)
-    else:
-        if current_status == "לתיקון":
-            st.markdown(f"<div class='fix-notice'>⚠️ נדרש תיקון לשלב: <b>{current_stage}</b></div>",
-                        unsafe_allow_html=True)
-
-        last_sub = my_subs.iloc[-1] if not my_subs.empty else None
-        last_p_name = last_sub['שם הפרויקט'] if last_sub is not None else ""
-
-        with st.form("submit_form"):
-            st.subheader(f"הגשה ל{current_stage}")
-            p_name = st.text_input("שם הפרויקט:", value=last_p_name) if current_stage == all_stages[0] else last_p_name
-            if current_stage != all_stages[0]: st.markdown(f"**פרויקט:** {last_p_name}")
-
-            link = st.text_input("קישור לתוצר (GitHub/Drive):")
-            techs = st.multiselect("טכנולוגיות:", tech_options)
-            desc = st.text_area("תיאור הביצוע:")
-
-            if st.form_submit_button("🚀 שלח הגשה"):
-                if not p_name or not desc:
-                    st.warning("מלא שדות חובה.")
-                elif current_stage != all_stages[0] and not link:
-                    st.error("חובה קישור משלב 2!")
+                if overdue:
+                    st.markdown(f"<span class='status-red'>{label}</span>", unsafe_allow_html=True)
                 else:
-                    new_row = {
-                        "Timestamp": time.strftime("%d/%m/%Y %H:%M:%S"),
-                        "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'],
-                        "שלב": current_stage, "שם הפרויקט": p_name,
-                        "תוכן": f"טכנולוגיות: {', '.join(techs)}\n{desc}",
-                        "קישור": link, "סטטוס": "הוגש"
-                    }
-                    conn.update(worksheet="Form Responses 1",
-                                data=pd.concat([df_subs, pd.DataFrame([new_row])], ignore_index=True))
-                    st.balloons();
-                    st.cache_data.clear();
-                    time.sleep(1);
-                    st.rerun()
+                    st.write(label)
+
+    # --- ממשק מורה ---
+    if st.session_state['role'] == 'teacher':
+        st.header("👨‍🏫 לוח בקרה למורה")
+        t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפת כיתה", "✅ אישור הגשות", "⚙️ הגדרות", "👥 תלמידים"])
+
+        with t_approve:
+            st.subheader("📥 הגשות חדשות")
+            pending = df_subs[df_subs['סטטוס'] == 'הוגש']
+            if pending.empty:
+                st.info("אין הגשות חדשות.")
+            else:
+                for idx, row in pending.iterrows():
+                    with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
+                        c1, c2 = st.columns([2, 1])
+                        with c1:
+                            st.markdown(f"**פרויקט:** {row['שם הפרויקט']}")
+                            st.markdown(f"**תיאור:**\n{row['תוכן']}")
+                            link_val = str(row['קישור']).strip()
+                            if link_val:
+                                st.markdown(
+                                    f"""<div class='link-box'>🔗 <a href='{link_val}' target='_blank'>לחץ לצפייה בתוצר</a></div>""",
+                                    unsafe_allow_html=True)
+                        with c2:
+                            if st.button("אשר ✅", key=f"ok_{idx}"):
+                                df_subs.at[idx, 'סטטוס'] = "מאושר"
+                                conn.update(worksheet="Form Responses 1", data=df_subs)
+                                st.cache_data.clear();
+                                st.success("אושר!");
+                                time.sleep(1);
+                                st.rerun()
+                            if st.button("לתיקון ❌", key=f"fix_{idx}"):
+                                df_subs.at[idx, 'סטטוס'] = "לתיקון"
+                                conn.update(worksheet="Form Responses 1", data=df_subs)
+                                st.cache_data.clear();
+                                st.warning("הוחזר לתיקון");
+                                time.sleep(1);
+                                st.rerun()
+
+            st.markdown("---")
+            st.subheader("📜 היסטוריה (מאושרים/לתיקון)")
+            st.dataframe(df_subs[df_subs['סטטוס'].isin(['מאושר', 'לתיקון'])].iloc[::-1], use_container_width=True,
+                         hide_index=True)
+
+        with t_map:
+            if not df_stud.empty:
+                map_list = []
+                for _, s_row in df_stud.iterrows():
+                    sid = clean_val(s_row.get('תעודת זהות', s_row.iloc[0])).lstrip('0')
+                    row_map = {"תלמיד": s_row.get('שם התלמיד', s_row.iloc[1])}
+                    for stage in all_stages:
+                        sub = df_subs[(df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == sid) & (
+                                    df_subs['שלב'] == stage)]
+                        status = sub.iloc[-1]['סטטוס'] if not sub.empty else "⚪"
+                        row_map[stage] = "✅" if status == "מאושר" else (
+                            "❌" if status == "לתיקון" else ("⏳" if status == "הוגש" else "⚪"))
+                    map_list.append(row_map)
+                st.table(pd.DataFrame(map_list))
+
+        with t_studs:
+            st.subheader("👥 ניהול רשימת תלמידים")
+            edited_s = st.data_editor(df_stud, num_rows="dynamic", key="edit_s_final")
+            if st.button("💾 שמור תלמידים"):
+                conn.update(worksheet="students", data=edited_s);
+                st.cache_data.clear();
+                st.success("נשמר");
+                st.rerun()
+
+        with t_config:
+            st.subheader("⚙️ הגדרות מערכת")
+            edited_c = st.data_editor(df_conf, num_rows="dynamic", key="edit_c_final")
+            if st.button("💾 שמור הגדרות"):
+                conn.update(worksheet="config", data=edited_c);
+                st.cache_data.clear();
+                st.success("נשמר");
+                st.rerun()
+
+    # --- ממשק תלמיד ---
+    elif st.session_state['role'] == 'student':
+        my_id = clean_val(st.session_state['id']).lstrip('0')
+        my_subs = df_subs[df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == my_id]
+
+        # מציאת השלב הנוכחי להגשה
+        current_stage, current_status = all_stages[0], ""
+        for s in all_stages:
+            sub = my_subs[my_subs['שלב'] == s]
+            stat = sub.iloc[-1]['סטטוס'] if not sub.empty else ""
+            if stat == "לתיקון":
+                current_stage, current_status = s, stat
+                break
+            elif stat != "מאושר":
+                current_stage, current_status = s, stat
+                break
+
+        st.header(f"הגשת פרויקט - {st.session_state['name']}")
+
+        if current_status == "הוגש":
+            st.markdown(f"<div class='pending-notice'>⏳ שלב <b>{current_stage}</b> נשלח ובהמתנה לבדיקת מורה.</div>",
+                        unsafe_allow_html=True)
+        else:
+            if current_status == "לתיקון":
+                st.markdown(
+                    f"<div class='fix-notice'>⚠️ המורה ביקש תיקונים לשלב: <b>{current_stage}</b>. אנא הגש שוב.</div>",
+                    unsafe_allow_html=True)
+
+            last_sub = my_subs.iloc[-1] if not my_subs.empty else None
+            last_p_name = last_sub['שם הפרויקט'] if last_sub is not None else ""
+
+            with st.form("submit_form_final"):
+                st.subheader(f"מגיש כעת: {current_stage}")
+
+                # שדה שם פרויקט (ראשון בטופס)
+                if current_stage == all_stages[0]:
+                    p_name = st.text_input("שם הפרויקט:", value=last_p_name)
+                else:
+                    st.markdown(f"**שם הפרויקט:** {last_p_name}")
+                    p_name = last_p_name
+
+                link = st.text_input("קישור לתוצר (GitHub / Drive / Figma):")
+                techs = st.multiselect("טכנולוגיות ששימשו אותי בשלב זה:", tech_options)
+                desc = st.text_area("תיאור קצר של מה שביצעת:")
+
+                if st.form_submit_button("🚀 שלח הגשה"):
+                    if not p_name or not desc:
+                        st.warning("בבקשה מלא את שם הפרויקט ותיאור הביצוע.")
+                    elif current_stage != all_stages[0] and not link:
+                        st.error("חובה לצרף קישור משלב 2 והלאה.")
+                    else:
+                        new_row = {
+                            "Timestamp": time.strftime("%d/%m/%Y %H:%M:%S"),
+                            "תעודת זהות": st.session_state['id'],
+                            "שם התלמיד": st.session_state['name'],
+                            "שלב": current_stage,
+                            "שם הפרויקט": p_name,
+                            "תוכן": f"טכנולוגיות: {', '.join(techs)}\n{desc}",
+                            "קישור": link,
+                            "סטטוס": "הוגש"
+                        }
+                        conn.update(worksheet="Form Responses 1",
+                                    data=pd.concat([df_subs, pd.DataFrame([new_row])], ignore_index=True))
+                        st.balloons()
+                        st.cache_data.clear()
+                        st.success("ההגשה נשלחה בהצלחה!")
+                        time.sleep(1)
+                        st.rerun()
