@@ -42,32 +42,40 @@ if not st.session_state['logged_in']:
     t1, t2 = st.tabs(["🔑 כניסת תלמיד", "👨‍🏫 כניסת מורה"])
 
     with t1:
-        sid = st.text_input("הקלד תעודת זהות (כולל אפס אם יש):").strip()
+        sid_input = st.text_input("הקלד תעודת זהות:").strip()
+
         if st.button("התחבר"):
             _, df_stud, _ = load_all_data()
 
             if not df_stud.empty:
-                # הפיכת ה-Input של התלמיד לטקסט נקי
-                user_id = str(sid).strip()
+                # 1. ניקוי הקלט של המשתמש (הורדת אפס מוביל כדי להשוות למספר נקי)
+                clean_sid = sid_input.lstrip('0')
 
-                # הפיכת עמודת הת"ז בגיליון לטקסט באורך 9 תווים (מוסיף אפסים אם נמחקו בגוגל)
-                # אנחנו מניחים שהעמודה הראשונה (index 0) היא ת"ז
-                df_stud.iloc[:, 0] = df_stud.iloc[:, 0].astype(str).str.strip().str.zfill(9)
-                allowed_ids = df_stud.iloc[:, 0].values
+                # 2. יצירת רשימה של כל תעודות הזהות מהגיליון כטקסט נקי
+                # אנחנו הופכים את העמודה לטקסט, מורידים אפסים ומשווים
+                found_user = None
+                for index, row in df_stud.iterrows():
+                    current_id = str(row.iloc[0]).strip().lstrip('0')
+                    if clean_sid == current_id and clean_sid != "":
+                        found_user = row
+                        break
 
-                # בדיקה גם מול הגרסה עם האפס וגם בלי (ליתר ביטחון)
-                if user_id in allowed_ids or user_id.zfill(9) in allowed_ids:
-                    # מציאת השם (משתמשים ב-zfill כדי למצוא את השורה הנכונה)
-                    match_id = user_id if user_id in allowed_ids else user_id.zfill(9)
-                    sname = df_stud[df_stud.iloc[:, 0] == match_id].iloc[0, 1]
-
-                    st.session_state.update({'logged_in': True, 'role': 'student', 'id': match_id, 'name': sname})
+                if found_user is not None:
+                    sname = found_user.iloc[1]
+                    # שומרים ב-session_state את הגרסה המקורית שהוקלדה
+                    st.session_state.update({
+                        'logged_in': True,
+                        'role': 'student',
+                        'id': sid_input,
+                        'name': sname
+                    })
                     st.success(f"שלום {sname}!")
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error(f"תעודת זהות '{user_id}' לא נמצאה.")
-
+                    st.error(f"תעודת זהות '{sid_input}' לא נמצאה במערכת.")
+            else:
+                st.error("רשימת התלמידים בגיליון ריקה.")
     with t2:
         pwd = st.text_input("סיסמת מורה:", type="password")
         if st.button("כניסה למערכת הניהול"):
