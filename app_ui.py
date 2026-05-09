@@ -37,11 +37,13 @@ def load_all_data():
         studs = conn.read(worksheet="students", ttl=0).fillna("")
         conf = conn.read(worksheet="config", ttl=0).fillna("")
 
-        # וידוא עמודות קריטיות בטבלת הגשות
-        cols = ["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "סטטוס"]
-        for col in cols:
-            if col not in subs.columns:
+        # וידוא עמודות מינימליות בטבלת הגשות למניעת קריסה
+        expected_subs = ["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "סטטוס"]
+        for i, col in enumerate(expected_subs):
+            if len(subs.columns) <= i:
                 subs[col] = ""
+            elif subs.columns[i] == "":  # אם יש עמודה בלי שם
+                subs.rename(columns={subs.columns[i]: col}, inplace=True)
 
         return subs, studs, conf
     except Exception as e:
@@ -68,17 +70,18 @@ if not st.session_state['logged_in']:
         sid_input = st.text_input("תעודת זהות:").strip()
         if st.button("התחבר"):
             user_id_clean = clean_val(sid_input).lstrip('0')
-            # שימוש בשם עמודה במקום אינדקס למניעת IndexError
             found_user = None
-            if not df_stud.empty and 'תעודת זהות' in df_stud.columns:
+            if not df_stud.empty:
                 for _, row in df_stud.iterrows():
-                    if clean_val(row['תעודת זהות']).lstrip('0') == user_id_clean:
+                    # גישה לפי מיקום: עמודה 0 היא ת.ז
+                    if clean_val(row.iloc[0]).lstrip('0') == user_id_clean:
                         found_user = row
                         break
 
             if found_user is not None:
-                st.session_state.update(
-                    {'logged_in': True, 'role': 'student', 'id': sid_input, 'name': found_user['שם התלמיד']})
+                # גישה לפי מיקום: עמודה 1 היא השם
+                name_val = found_user.iloc[1] if len(found_user) > 1 else "תלמיד"
+                st.session_state.update({'logged_in': True, 'role': 'student', 'id': sid_input, 'name': name_val})
                 st.rerun()
             else:
                 st.error("תעודת זהות לא נמצאה.")
@@ -89,7 +92,7 @@ if not st.session_state['logged_in']:
                 st.session_state.update({'logged_in': True, 'role': 'teacher', 'name': 'המורה'})
                 st.rerun()
 else:
-    # הגדרות מערכת
+    # הגדרות מערכת מהקונפיג
     all_stages = df_conf.iloc[:, 0].dropna().tolist() if not df_conf.empty else ["שלב 1"]
     deadlines = df_conf.iloc[:, 1].tolist() if not df_conf.empty and len(df_conf.columns) > 1 else []
     tech_options = [str(t).strip() for t in df_conf.iloc[:, 2].dropna().unique()] if not df_conf.empty and len(
@@ -108,16 +111,20 @@ else:
 
         with tab_approve:
             st.subheader("📥 הגשות חדשות")
-            pending = df_subs[df_subs['סטטוס'] == 'הוגש']
+            # עמודה 6 היא בד"כ 'סטטוס'
+            status_col = df_subs.columns[6] if len(df_subs.columns) > 6 else "סטטוס"
+            pending = df_subs[df_subs[status_col] == 'הוגש']
+
             if pending.empty:
                 st.info("אין הגשות חדשות.")
             else:
                 for idx, row in pending.iterrows():
-                    with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
+                    # עמודה 2 היא שם, עמודה 3 היא שלב
+                    with st.expander(f"🆕 {row.iloc[2]} - {row.iloc[3]}"):
                         c1, c2 = st.columns([2, 1])
                         with c1:
-                            st.markdown(f"**פרויקט:** {row['שם הפרויקט']}")
-                            parts = str(row['תוכן']).split("לינק: ")
+                            st.markdown(f"**פרויקט:** {row.iloc[4]}")  # עמודה 4 היא שם פרויקט
+                            parts = str(row.iloc[5]).split("לינק: ")  # עמודה 5 היא התוכן
                             main_content = parts[0]
                             link_url = parts[1].strip() if len(parts) > 1 else ""
                             st.markdown(f"**תוכן:**\n{main_content}")
@@ -127,14 +134,14 @@ else:
                                     unsafe_allow_html=True)
                         with c2:
                             if st.button("אשר ✅", key=f"ok_{idx}"):
-                                df_subs.at[idx, 'סטטוס'] = "מאושר"
+                                df_subs.at[idx, status_col] = "מאושר"
                                 conn.update(worksheet="Form Responses 1", data=df_subs)
                                 st.cache_data.clear();
                                 st.success("אושר!");
                                 time.sleep(1);
                                 st.rerun()
                             if st.button("לתיקון ❌", key=f"fix_{idx}"):
-                                df_subs.at[idx, 'סטטוס'] = "לתיקון"
+                                df_subs.at[idx, status_col] = "לתיקון"
                                 conn.update(worksheet="Form Responses 1", data=df_subs)
                                 st.cache_data.clear();
                                 st.warning("לתיקון!");
@@ -143,20 +150,21 @@ else:
 
             st.markdown("---")
             st.subheader("📜 היסטוריה")
-            st.dataframe(df_subs[df_subs['סטטוס'].isin(['מאושר', 'לתיקון'])].iloc[::-1], use_container_width=True)
+            history = df_subs[df_subs[status_col].isin(['מאושר', 'לתיקון'])]
+            st.dataframe(history.iloc[::-1], use_container_width=True, hide_index=True)
 
         with tab_map:
-            if not df_stud.empty and 'תעודת זהות' in df_stud.columns:
+            if not df_stud.empty:
                 map_list = []
                 for _, s_row in df_stud.iterrows():
-                    s_name = s_row['שם התלמיד']
-                    s_id = clean_val(s_row['תעודת זהות']).lstrip('0')
+                    s_id = clean_val(s_row.iloc[0]).lstrip('0')
+                    s_name = s_row.iloc[1]
                     row_map = {"תלמיד": s_name}
                     for stage in all_stages:
-                        # תיקון ה-IndexError: שימוש בשם עמודה 'תעודת זהות'
-                        sub = df_subs[(df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == s_id) & (
-                                    df_subs['שלב'] == stage)]
-                        status = sub.iloc[-1]['סטטוס'] if not sub.empty else "⚪"
+                        # חיפוש לפי מיקום עמודת ת.ז (1) ושלב (3)
+                        sub = df_subs[(df_subs.iloc[:, 1].apply(lambda x: clean_val(x).lstrip('0')) == s_id) & (
+                                    df_subs.iloc[:, 3] == stage)]
+                        status = sub.iloc[-1].iloc[6] if not sub.empty else "⚪"
                         row_map[stage] = "✅" if status == "מאושר" else (
                             "❌" if status == "לתיקון" else ("⏳" if status == "הוגש" else "⚪"))
                     map_list.append(row_map)
@@ -181,13 +189,12 @@ else:
     # --- ממשק תלמיד ---
     elif st.session_state['role'] == 'student':
         my_id = clean_val(st.session_state['id']).lstrip('0')
-        # שימוש בשם עמודה 'תעודת זהות' במקום אינדקס
-        my_subs = df_subs[df_subs['תעודת זהות'].apply(lambda x: clean_val(x).lstrip('0')) == my_id]
+        my_subs = df_subs[df_subs.iloc[:, 1].apply(lambda x: clean_val(x).lstrip('0')) == my_id]
 
         current_stage, current_status = all_stages[0], ""
         for s in all_stages:
-            sub = my_subs[my_subs['שלב'] == s]
-            stat = sub.iloc[-1]['סטטוס'] if not sub.empty else ""
+            sub = my_subs[my_subs.iloc[:, 3] == s]  # עמודה 3 היא שלב
+            stat = sub.iloc[-1].iloc[6] if not sub.empty else ""  # עמודה 6 היא סטטוס
             if stat == "לתיקון":
                 current_stage, current_status = s, stat; break
             elif stat != "מאושר":
@@ -196,8 +203,8 @@ else:
         st.sidebar.subheader("📍 מצב התקדמות:")
         today = datetime.now()
         for i, s in enumerate(all_stages):
-            sub = my_subs[my_subs['שלב'] == s];
-            stat = sub.iloc[-1]['סטטוס'] if not sub.empty else ""
+            sub = my_subs[my_subs.iloc[:, 3] == s];
+            stat = sub.iloc[-1].iloc[6] if not sub.empty else ""
             dl_str = deadlines[i] if i < len(deadlines) else ""
             overdue = False
             if dl_str and stat != "מאושר":
@@ -212,6 +219,8 @@ else:
             else:
                 st.sidebar.write(txt)
 
+        st.header(f"שלום {st.session_state['name']}")
+
         if current_status == "הוגש":
             st.markdown(f"<div class='pending-notice'>⏳ שלב <b>{current_stage}</b> בבדיקה.</div>",
                         unsafe_allow_html=True)
@@ -221,7 +230,7 @@ else:
                             unsafe_allow_html=True)
 
             last_sub = my_subs.iloc[-1] if not my_subs.empty else None
-            last_p_name = last_sub['שם הפרויקט'] if last_sub is not None else ""
+            last_p_name = last_sub.iloc[4] if last_sub is not None else ""
 
             with st.form("submit_form"):
                 st.subheader(f"הגשה ל{current_stage}")
@@ -244,12 +253,12 @@ else:
                     elif current_stage != all_stages[0] and not link:
                         st.error("חובה קישור!")
                     else:
-                        new_row = {"Timestamp": time.strftime("%d/%m/%Y %H:%M:%S"),
-                                   "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'],
-                                   "שלב": current_stage, "שם הפרויקט": p_name,
-                                   "תוכן": f"טכנולוגיות: {', '.join(techs)}\n{desc}\nלינק: {link}", "סטטוס": "הוגש"}
-                        conn.update(worksheet="Form Responses 1",
-                                    data=pd.concat([df_subs, pd.DataFrame([new_row])], ignore_index=True))
+                        new_row = [time.strftime("%d/%m/%Y %H:%M:%S"), st.session_state['id'], st.session_state['name'],
+                                   current_stage, p_name, f"טכנולוגיות: {', '.join(techs)}\n{desc}\nלינק: {link}",
+                                   "הוגש"]
+                        # יצירת שורה חדשה בפורמט הנכון
+                        new_df = pd.DataFrame([new_row], columns=df_subs.columns)
+                        conn.update(worksheet="Form Responses 1", data=pd.concat([df_subs, new_df], ignore_index=True))
                         st.balloons();
                         st.cache_data.clear();
                         time.sleep(1);
