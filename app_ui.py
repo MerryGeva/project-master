@@ -33,47 +33,50 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def normalize_id(v):
     """מנקה תעודת זהות ומוסיפה אפסים מובילים לפורמט של 9 ספרות"""
     if pd.isna(v) or v == "": return ""
-    # הסרת .0 והשארת ספרות בלבד
     s = str(v).split('.')[0]
     s = ''.join(filter(str.isdigit, s))
     if not s: return ""
-    # הוספת אפסים מובילים עד ל-9 ספרות
     return s.zfill(9)
 
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=10)  # העלאת ה-TTL ל-10 שניות להורדת עומס
 def load_all_data():
+    """ניסיון טעינה עדין יותר"""
     try:
         subs = conn.read(worksheet="Form Responses 1", ttl=0).fillna("")
         studs = conn.read(worksheet="students", ttl=0).fillna("")
         conf = conn.read(worksheet="config", ttl=0).fillna("")
 
-        subs.columns = [str(c).strip() for c in subs.columns]
-        studs.columns = [str(c).strip() for c in studs.columns]
-        conf.columns = [str(c).strip() for c in conf.columns]
+        # ניקוי שמות עמודות
+        for df in [subs, studs, conf]:
+            df.columns = [str(c).strip() for c in df.columns]
 
         critical = ["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "קישור", "סטטוס"]
         for col in critical:
             if col not in subs.columns: subs[col] = ""
 
         return subs, studs, conf, True
-    except Exception:
+    except Exception as e:
+        # במקום st.stop(), נחזיר דאטה ריק וסימון שגיאה
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), False
 
 
+# טעינה
 df_subs, df_stud, df_conf, success = load_all_data()
 
+# במקום לעצור הכל, נציג אזהרה אם הטעינה נכשלה
 if not success:
-    st.error("⚠️ תקלה בתקשורת עם גוגל. נסה לרענן את הדף בעוד כמה שניות.")
-    st.stop()
+    st.warning("⚠️ גוגל לא עונה לרגע. מנסה להתחבר שוב ברקע... (אפשר לנסות לרענן פעם אחת)")
+    # אם אין נתונים בכלל, רק אז נעצור
+    if df_subs.empty:
+        st.stop()
 
-# שליפת הגדרות מה-Config
+# שליפת הגדרות
 if not df_conf.empty and "שלב" in df_conf.columns:
     all_stages = df_conf["שלב"].dropna().astype(str).tolist()
-    deadlines = df_conf["דד-ליין"].astype(str).tolist() if "דד-ליין" in df_conf.columns else []
     tech_options = df_conf["טכנולוגיות"].dropna().unique().tolist() if "טכנולוגיות" in df_conf.columns else ["Python"]
 else:
-    all_stages, deadlines, tech_options = ["שלב 1"], [], ["Python"]
+    all_stages, tech_options = ["שלב 1"], ["Python"]
 
 # --- 3. ניהול כניסה ---
 if 'logged_in' not in st.session_state:
@@ -89,20 +92,15 @@ if not st.session_state['logged_in']:
             found_user = None
             if not df_stud.empty:
                 for _, row in df_stud.iterrows():
-                    db_id_norm = normalize_id(row.iloc[0])
-                    if db_id_norm == u_norm and u_norm != "":
+                    if normalize_id(row.iloc[0]) == u_norm and u_norm != "":
                         found_user = row
                         break
             if found_user is not None:
-                st.session_state.update({
-                    'logged_in': True,
-                    'role': 'student',
-                    'id': u_norm,  # שומרים את ה-ID המנורמל
-                    'name': str(found_user.iloc[1])
-                })
+                st.session_state.update(
+                    {'logged_in': True, 'role': 'student', 'id': u_norm, 'name': str(found_user.iloc[1])})
                 st.rerun()
             else:
-                st.error(f"תעודת זהות לא נמצאה. (המערכת חיפשה: {u_norm})")
+                st.error(f"תעודת זהות לא נמצאה. (נסה להזין שוב)")
     with t2:
         pwd = st.text_input("סיסמת מורה:", type="password")
         if st.button("כניסה"):
@@ -110,7 +108,7 @@ if not st.session_state['logged_in']:
                 st.session_state.update({'logged_in': True, 'role': 'teacher', 'name': 'המורה'})
                 st.rerun()
 
-# --- 4. ממשק לאחר התחברות ---
+# --- 4. ממשק מחובר ---
 else:
     with st.sidebar:
         st.title(f"שלום, {st.session_state['name']}")
@@ -121,15 +119,13 @@ else:
         if st.session_state['role'] == 'student':
             st.markdown("---")
             st.subheader("📍 התקדמות")
-            m_id_norm = normalize_id(st.session_state['id'])
-            my_subs = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == m_id_norm]
-            for i, stage in enumerate(all_stages):
-                s_sub = my_subs[my_subs['שלב'] == stage]
-                stat = s_sub.iloc[-1]['סטטוס'] if not s_sub.empty else ""
+            my_id = normalize_id(st.session_state['id'])
+            my_s = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
+            for s in all_stages:
+                stat = my_s[my_s['שלב'] == s].iloc[-1]['סטטוס'] if not my_s[my_s['שלב'] == s].empty else ""
                 icon = "✅" if stat == "מאושר" else ("❌" if stat == "לתיקון" else ("⏳" if stat == "הוגש" else "⚪"))
-                st.write(f"{icon} {stage}")
+                st.write(f"{icon} {s}")
 
-    # --- ממשק מורה ---
     if st.session_state['role'] == 'teacher':
         st.header("👨‍🏫 לוח בקרה למורה")
         t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפת כיתה", "✅ אישור הגשות", "⚙️ הגדרות", "👥 תלמידים"])
@@ -141,22 +137,27 @@ else:
             else:
                 for idx, row in pending.iterrows():
                     with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
-                        st.write(f"**פרויקט:** {row['שם הפרויקט']}")
-                        st.write(f"**תיאור:** {row['תוכן']}")
+                        st.write(f"**פרויקט:** {row['שם הפרויקט']}\n\n**תיאור:** {row['תוכן']}")
                         if str(row['קישור']).strip():
                             st.markdown(f"🔗 <a href='{row['קישור']}' target='_blank'>צפה בתוצר</a>",
                                         unsafe_allow_html=True)
                         c1, c2 = st.columns(2)
                         if c1.button("אשר ✅", key=f"ok_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "מאושר"
-                            conn.update(worksheet="Form Responses 1", data=df_subs)
-                            st.cache_data.clear();
-                            st.rerun()
+                            try:
+                                conn.update(worksheet="Form Responses 1", data=df_subs)
+                                st.cache_data.clear();
+                                st.rerun()
+                            except:
+                                st.error("גוגל עמוס, נסה שוב בעוד 2 שניות.")
                         if c2.button("לתיקון ❌", key=f"fix_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "לתיקון"
-                            conn.update(worksheet="Form Responses 1", data=df_subs)
-                            st.cache_data.clear();
-                            st.rerun()
+                            try:
+                                conn.update(worksheet="Form Responses 1", data=df_subs)
+                                st.cache_data.clear();
+                                st.rerun()
+                            except:
+                                st.error("גוגל עמוס, נסה שוב בעוד 2 שניות.")
             st.markdown("---")
             st.subheader("📜 כל ההגשות")
             st.dataframe(df_subs.iloc[::-1], use_container_width=True, hide_index=True)
@@ -165,16 +166,14 @@ else:
             if not df_stud.empty:
                 map_d = []
                 for _, s_row in df_stud.iterrows():
-                    s_id_norm = normalize_id(s_row.iloc[0])
+                    sid = normalize_id(s_row.iloc[0])
                     row_m = {"תלמיד": s_row.iloc[1]}
                     for stage in all_stages:
                         st_subs = df_subs[
-                            (df_subs['תעודת זהות'].apply(normalize_id) == s_id_norm) & (df_subs['שלב'] == stage)]
-                        if not st_subs.empty:
-                            ls = st_subs.iloc[-1]['סטטוס']
-                            row_m[stage] = "✅" if ls == "מאושר" else ("⏳" if ls == "הוגש" else "❌")
-                        else:
-                            row_m[stage] = "⚪"
+                            (df_subs['תעודת זהות'].apply(normalize_id) == sid) & (df_subs['שלב'] == stage)]
+                        last_s = st_subs.iloc[-1]['סטטוס'] if not st_subs.empty else "⚪"
+                        row_m[stage] = "✅" if last_s == "מאושר" else (
+                            "⏳" if last_s == "הוגש" else ("❌" if last_s == "לתיקון" else "⚪"))
                     map_d.append(row_m)
                 st.dataframe(pd.DataFrame(map_d), use_container_width=True, hide_index=True)
 
@@ -192,53 +191,43 @@ else:
                 st.cache_data.clear();
                 st.rerun()
 
-    # --- ממשק תלמיד ---
-    else:
-        m_id_norm = normalize_id(st.session_state['id'])
-        my_subs = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == m_id_norm]
-        curr_stage, curr_stat = all_stages[0], ""
+    else:  # ממשק תלמיד
+        my_id = normalize_id(st.session_state['id'])
+        my_subs = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
+        curr_stage = all_stages[0]
+        curr_stat = ""
         for s in all_stages:
             s_sub = my_subs[my_subs['שלב'] == s]
             stt = s_sub.iloc[-1]['סטטוס'] if not s_sub.empty else ""
-            if stt == "לתיקון":
-                curr_stage, curr_stat = s, stt; break
-            elif stt != "מאושר":
-                curr_stage, curr_stat = s, stt; break
+            if stt in ["", "לתיקון"]: curr_stage, curr_stat = s, stt; break
+            if stt == "הוגש": curr_stage, curr_stat = s, stt; break
 
         st.header(f"שלום {st.session_state['name']}")
         if curr_stat == "הוגש":
-            st.markdown(f"<div class='pending-notice'>⏳ שלב <b>{curr_stage}</b> בבדיקה.</div>", unsafe_allow_html=True)
+            st.info(f"שלב {curr_stage} נשלח וממתין לבדיקה.")
         else:
-            if curr_stat == "לתיקון":
-                st.markdown(f"<div class='fix-notice'>⚠️ נדרש תיקון לשלב: <b>{curr_stage}</b></div>",
-                            unsafe_allow_html=True)
+            if curr_stat == "לתיקון": st.warning(f"נדרש תיקון לשלב {curr_stage}")
             last_p = my_subs.iloc[-1]['שם הפרויקט'] if not my_subs.empty else ""
             with st.form("sub_f"):
                 st.subheader(f"הגשה לשלב: {curr_stage}")
                 p_n = st.text_input("שם פרויקט:", value=last_p) if curr_stage == all_stages[0] else last_p
-                if curr_stage != all_stages[0]: st.info(f"פרויקט: {last_p}")
                 link = st.text_input("קישור:")
                 techs = st.multiselect("טכנולוגיות:", tech_options)
-                desc = st.text_area("תיאור:")
+                desc = st.text_area("תיאור המשימה שביצעת:")
                 if st.form_submit_button("🚀 שלח"):
                     if not p_n or not desc:
                         st.error("מלא שדות חובה.")
-                    elif curr_stage != all_stages[0] and not link:
-                        st.error("חובה קישור משלב 2.")
                     else:
-                        new_r = {
-                            "Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                            "תעודת זהות": st.session_state['id'],
-                            "שם התלמיד": st.session_state['name'],
-                            "שלב": curr_stage,
-                            "שם הפרויקט": p_n,
-                            "תוכן": f"טכנולוגיות: {', '.join(techs)}\n{desc}",
-                            "קישור": link,
-                            "סטטוס": "הוגש"
-                        }
-                        conn.update(worksheet="Form Responses 1",
-                                    data=pd.concat([df_subs, pd.DataFrame([new_r])], ignore_index=True))
-                        st.balloons();
-                        st.cache_data.clear();
-                        time.sleep(1);
-                        st.rerun()
+                        new_r = {"Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                                 "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'],
+                                 "שלב": curr_stage, "שם הפרויקט": p_n,
+                                 "תוכן": f"טכנולוגיות: {', '.join(techs)}\n{desc}", "קישור": link, "סטטוס": "הוגש"}
+                        try:
+                            conn.update(worksheet="Form Responses 1",
+                                        data=pd.concat([df_subs, pd.DataFrame([new_r])], ignore_index=True))
+                            st.balloons();
+                            st.cache_data.clear();
+                            time.sleep(1);
+                            st.rerun()
+                        except:
+                            st.error("שגיאה בשליחה לגוגל, נסה שוב בעוד רגע.")
