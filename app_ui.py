@@ -18,21 +18,18 @@ st.markdown("""
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 
-# שינוי: הוספת זיכרון מטמון (Cache) כדי לא להעמיס על גוגל
-@st.cache_data(ttl=120) # הנתונים יישמרו בזיכרון ל-120 שניות
+@st.cache_data(ttl=300) # נשמור ל-5 דקות בזיכרון כברירת מחדל
 def load_all_data():
     try:
-        # קריאה עם ttl קצר למקרה שצריך עדכון, אבל לא 0 מוחלט
-        subs = conn.read(worksheet="Form Responses 1", ttl=5)
-        studs = conn.read(worksheet="students", ttl=5)
-        conf = conn.read(worksheet="config", ttl=5)
+        # קריאה ללא TTL פנימי - ה-Cache העליון מנהל הכל
+        subs = conn.read(worksheet="Form Responses 1")
+        studs = conn.read(worksheet="students")
+        conf = conn.read(worksheet="config")
         return subs.fillna(""), studs.fillna(""), conf.fillna("")
     except Exception as e:
-        if "429" in str(e):
-            st.error("⚠️ גוגל חסמה אותנו לרגע בגלל עומס בקשות. נא להמתין 10 שניות ולנסות שוב.")
-        else:
-            st.error(f"שגיאה בגישה ללשוניות: {e}")
-        st.stop()
+        # במקום לעצור את האפליקציה, נחזיר ערכים ריקים ונדפיס אזהרה
+        st.warning("⚠️ גוגל זקוקה למנוחה קצרה (Quota). הנתונים יוצגו מתוך הזיכרון או שיופיעו בעוד רגע...")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 
 # --- ניהול התחברות ---
@@ -120,13 +117,23 @@ else:
                         if c1.button("אשר הגשה ✅", key=f"ok_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "מאושר"
                             conn.update(worksheet="Form Responses 1", data=df_subs)
-                            st.cache_data.clear()  # זה מנקה את הזיכרון ומכריח קריאה טרייה מגוגל
+                            if st.button("שמור"):
+                                conn.update(worksheet="...", data=...)
+                                st.toast("הנתונים נשמרו בהצלחה!") # הודעה קטנה ופחות "כבדה"
+                                time.sleep(2)
+                                st.cache_data.clear()
+                                st.rerun()
                             st.success("עודכן כמאושר!")
                             st.rerun()
                         if c2.button("בקש תיקון ❌", key=f"fix_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "לתיקון"
                             conn.update(worksheet="Form Responses 1", data=df_subs)
-                            st.cache_data.clear()  # זה מנקה את הזיכרון ומכריח קריאה טרייה מגוגל
+                            if st.button("שמור"):
+                                conn.update(worksheet="...", data=...)
+                                st.toast("הנתונים נשמרו בהצלחה!") # הודעה קטנה ופחות "כבדה"
+                                time.sleep(2)
+                                st.cache_data.clear()
+                                st.rerun()
                             st.warning("עודכן כנדרש לתיקון")
                             st.rerun()
 
@@ -140,7 +147,12 @@ else:
             )
             if st.button("שמור הגדרות"):
                 conn.update(worksheet="config", data=edited_conf)
-                st.cache_data.clear()  # זה מנקה את הזיכרון ומכריח קריאה טרייה מגוגל
+                if st.button("שמור"):
+                    conn.update(worksheet="...", data=...)
+                    st.toast("הנתונים נשמרו בהצלחה!")  # הודעה קטנה ופחות "כבדה"
+                    time.sleep(2)
+                    st.cache_data.clear()
+                    st.rerun()
                 st.success("הוגדר בהצלחה!")
 
         with tab_students:
@@ -155,7 +167,12 @@ else:
                 # הפיכת עמודת תעודת הזהות לטקסט לפני השמירה כדי למנוע בעיות של מספרים
                 edited_studs.iloc[:, 0] = edited_studs.iloc[:, 0].astype(str)
                 conn.update(worksheet="students", data=edited_studs)
-                st.cache_data.clear()  # זה מנקה את הזיכרון ומכריח קריאה טרייה מגוגל
+                if st.button("שמור"):
+                    conn.update(worksheet="...", data=...)
+                    st.toast("הנתונים נשמרו בהצלחה!")  # הודעה קטנה ופחות "כבדה"
+                    time.sleep(2)
+                    st.cache_data.clear()
+                    st.rerun()
                 st.success("הרשימה עודכנה!")
 
     # --- ממשק תלמיד ---
@@ -224,7 +241,12 @@ else:
                     }])
                     updated_subs = pd.concat([df_subs, new_sub], ignore_index=True)
                     conn.update(worksheet="Form Responses 1", data=updated_subs)
-                    st.cache_data.clear()  # זה מנקה את הזיכרון ומכריח קריאה טרייה מגוגל
+                    if st.button("שמור"):
+                        conn.update(worksheet="...", data=...)
+                        st.toast("הנתונים נשמרו בהצלחה!")  # הודעה קטנה ופחות "כבדה"
+                        time.sleep(2)
+                        st.cache_data.clear()
+                        st.rerun()
                     st.success("ההגשה נשלחה בהצלחה!")
                     st.balloons()
                     time.sleep(1)
