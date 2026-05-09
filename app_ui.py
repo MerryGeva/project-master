@@ -98,26 +98,46 @@ else:
                     with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
                         c1, c2 = st.columns([2, 1])
                         with c1:
-                            st.markdown(f"**פרויקט:** {row['שם הפרויקט']}")
-                            st.text(row['תוכן'])
+                            st.markdown(f"### פרויקט: {row['שם הפרויקט']}")
+
+                            # הפרדת התוכן כדי למצוא את הלינק
+                            parts = row['תוכן'].split("לינק: ")
+                            main_content = parts[0]
+                            link_url = parts[1].strip() if len(parts) > 1 else ""
+
+                            st.markdown(f"**פרטי ההגשה:**\n{main_content}")
+
+                            # הצגת הקישור ככפתור בולט או לינק לחיץ
+                            if link_url:
+                                # הבלטה של הקישור בתוך תיבה כחולה ולינק לחיץ
+                                st.markdown(f"""
+                                <div style="background-color: #e1f5fe; padding: 15px; border-radius: 5px; border-right: 5px solid #03a9f4;">
+                                    <span style="font-weight: bold;">🔗 קישור לתוצר:</span><br>
+                                    <a href="{link_url}" target="_blank" style="color: #0288d1; text-decoration: underline; word-break: break-all;">
+                                        {link_url}
+                                    </a>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                st.warning("לא צורף קישור להגשה זו.")
+
                         with c2:
-                            if st.button("אשר ✅", key=f"ok_{idx}"):
-                                df_subs.at[idx, 'סטטוס'] = "מאושר";
+                            st.markdown("### פעולות:")
+                            if st.button("אשר הגשה ✅", key=f"ok_{idx}", use_container_width=True):
+                                df_subs.at[idx, 'סטטוס'] = "מאושר"
                                 conn.update(worksheet="Form Responses 1", data=df_subs)
-                                st.cache_data.clear();
-                                st.rerun()
-                            if st.button("לתיקון ❌", key=f"fix_{idx}"):
-                                df_subs.at[idx, 'סטטוס'] = "לתיקון";
-                                conn.update(worksheet="Form Responses 1", data=df_subs)
-                                st.cache_data.clear();
+                                st.cache_data.clear()
+                                st.success("אושר!")
+                                time.sleep(1)
                                 st.rerun()
 
-            st.markdown("---")
-            st.subheader("📜 היסטוריית הגשות (מאושרות/לתיקון)")
-            history = df_subs[df_subs['סטטוס'] != 'הוגש'].iloc[::-1]  # הצגה מהחדש לישן
-            if not history.empty:
-                st.dataframe(history[['Timestamp', 'שם התלמיד', 'שלב', 'שם הפרויקט', 'סטטוס']],
-                             use_container_width=True)
+                            if st.button("בקש תיקון ❌", key=f"fix_{idx}", use_container_width=True):
+                                df_subs.at[idx, 'סטטוס'] = "לתיקון"
+                                conn.update(worksheet="Form Responses 1", data=df_subs)
+                                st.cache_data.clear()
+                                st.warning("הוחזר לתיקון")
+                                time.sleep(1)
+                                st.rerun()
 
         with tab_map:
             # (קוד מפת הכיתה נשאר זהה)
