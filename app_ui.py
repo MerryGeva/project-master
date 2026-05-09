@@ -77,7 +77,13 @@ else:
     tech_options = [str(t).strip() for t in df_conf.iloc[:, 2].dropna().unique()] if not df_conf.empty and len(
         df_conf.columns) >= 3 else ["Python", "JS"]
 
-    st.sidebar.title(f"שלום {st.session_state.get('name', 'המורה')}")
+    # בתוך ה-else (אחרי התחברות)
+    display_name = st.session_state.get('name')
+    if not display_name or display_name == "None":
+        display_name = "המורה"
+
+    st.sidebar.title(f"שלום {display_name}")
+
     if st.sidebar.button("🚪 התנתק"):
         st.session_state.clear();
         st.rerun()
@@ -197,11 +203,32 @@ else:
                 st.rerun()
 
         with tab_students:
-            edited_studs = st.data_editor(df_stud, num_rows="dynamic", key="stud_edit")
-            if st.button("עדכן רשימה"):
-                conn.update(worksheet="students", data=edited_studs);
-                st.cache_data.clear();
-                st.rerun()
+            st.subheader("👥 ניהול רשימת תלמידים")
+            st.write("ניתן להוסיף שורות חדשות בתחתית הטבלה (אל תשכח למלא 'כיתה')")
+
+            # עורך הנתונים
+            edited_studs = st.data_editor(
+                df_stud,
+                num_rows="dynamic",
+                key="stud_editor",
+                use_container_width=True
+            )
+
+            if st.button("💾 שמור שינויים ברשימת תלמידים"):
+                try:
+                    # וידוא שכל הנתונים נשמרים כטקסט כדי למנוע בעיות של גוגל שייטס
+                    final_studs = edited_studs.astype(str)
+
+                    # עדכון הגיליון
+                    conn.update(worksheet="students", data=final_studs)
+
+                    # ניקוי זיכרון ורענון
+                    st.cache_data.clear()
+                    st.success("הרשימה עודכנה ונשמרה בגיליון!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"שגיאה בשמירה: {e}")
 
     # --- ממשק תלמיד ---
     elif st.session_state['role'] == 'student':
