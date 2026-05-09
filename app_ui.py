@@ -149,4 +149,37 @@ else:
     elif st.session_state['role'] == 'student':
         st.header(f"הגשת פרויקט - {st.session_state['name']}")
         all_stages = df_conf.iloc[:, 0].tolist() if not df_conf.empty else ["שלב 1"]
-        my_id = clean_val(st.session_state['id']).lstrip
+        my_id = clean_val(st.session_state['id']).lstrip('0')
+        my_subs = df_subs[df_subs.iloc[:, 1].apply(lambda x: clean_val(x).lstrip('0')) == my_id]
+
+        allowed_stages = []
+        found_next = False
+        st.sidebar.subheader("📍 סטטוס:")
+        for s in all_stages:
+            sub = my_subs[my_subs.iloc[:, 3] == s]
+            stat = sub.iloc[-1].get('סטטוס', 'הוגש') if not sub.empty else "לא הוגש"
+            if stat == "מאושר":
+                st.sidebar.write(f"✅ {s}"); allowed_stages.append(s)
+            elif not found_next:
+                st.sidebar.write(f"⏳ {s}" if stat == "הוגש" else f"⚪ {s}")
+                allowed_stages.append(s); found_next = True
+            else: st.sidebar.write(f"🔒 {s}")
+
+        with st.form("student_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                stage = st.selectbox("בחר שלב:", allowed_stages)
+                techs = st.multiselect("טכנולוגיות:", tech_options)
+            with col2:
+                p_name = st.text_input("שם הפרויקט:")
+                link = st.text_input("קישור לתוצר:")
+            desc = st.text_area("תיאור העבודה:")
+            if st.form_submit_button("🚀 שלח הגשה"):
+                if p_name and desc:
+                    new_row = pd.DataFrame([{"Timestamp": time.strftime("%d/%m/%Y %H:%M:%S"), "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'], "שלב": stage, "שם הפרויקט": p_name, "תוכן": f"Techs: {', '.join(techs)} | {desc} | {link}", "סטטוס": "הוגש"}])
+                    updated_df = pd.concat([df_subs, new_row], ignore_index=True)
+                    conn.update(worksheet="Form Responses 1", data=updated_df)
+                    st.cache_data.clear()
+                    st.success("הוגש בהצלחה!")
+                    time.sleep(1); st.rerun()
+                else: st.warning("מלא שדות חובה.")
