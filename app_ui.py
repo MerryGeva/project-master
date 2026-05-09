@@ -61,7 +61,7 @@ def load_all_data():
 df_subs, df_stud, df_conf, success = load_all_data()
 
 if not success and df_subs.empty:
-    st.warning("⚠️ גוגל לא עונה לרגע. מנסה להתחבר שוב...")
+    st.warning("⚠️ המערכת בטעינה... אנא המתן רגע.")
     st.stop()
 
 # שליפת הגדרות
@@ -103,18 +103,33 @@ if not st.session_state['logged_in']:
 
 # --- 4. ממשק מחובר ---
 else:
+    # סרגל צדדי משותף (גם למורה וגם לתלמיד)
     with st.sidebar:
         st.title(f"שלום, {st.session_state['name']}")
         if st.button("🚪 התנתק"):
             st.session_state.clear();
             st.rerun()
 
+        # תצוגת התקדמות בסרגל הצד (גם לתלמיד וגם למורה כשהוא בתפקיד תלמיד)
+        if st.session_state['role'] == 'student':
+            st.markdown("---")
+            st.subheader("📍 מצב שלבים")
+            my_id_norm = normalize_id(st.session_state['id'])
+            my_s = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id_norm]
+            for s in all_stages:
+                # מוצאים את הסטטוס האחרון של השלב הספציפי
+                sub_at_stage = my_s[my_s['שלב'] == s]
+                stat = sub_at_stage.iloc[-1]['סטטוס'] if not sub_at_stage.empty else ""
+                icon = "✅" if stat == "מאושר" else ("❌" if stat == "לתיקון" else ("⏳" if stat == "הוגש" else "⚪"))
+                st.write(f"{icon} {s}")
+
+    # ממשק מורה
     if st.session_state['role'] == 'teacher':
         st.header("👨‍🏫 לוח בקרה למורה")
         t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפת כיתה", "✅ אישור הגשות", "⚙️ הגדרות", "👥 תלמידים"])
 
         with t_approve:
-            st.subheader("📥 הגשות חדשות לבדיקה")
+            st.subheader("📥 הגשות חדשות")
             pending = df_subs[df_subs['סטטוס'] == 'הוגש']
             if pending.empty:
                 st.info("אין הגשות חדשות.")
@@ -138,26 +153,19 @@ else:
                             st.rerun()
 
             st.markdown("---")
-            st.subheader("📜 היסטוריית הגשות וחיפוש")
-
-            # --- מנגנון סינון היסטוריה ---
+            st.subheader("📜 חיפוש בהיסטוריה")
             col_search, col_filter = st.columns([2, 1])
-            search_query = col_search.text_input("🔎 חיפוש לפי שם תלמיד או פרויקט:")
-            status_filter = col_filter.selectbox("מצב הגשה:", ["הכל", "מאושר", "לתיקון", "הוגש"])
+            search_query = col_search.text_input("🔎 חיפוש:")
+            status_filter = col_filter.selectbox("סטטוס:", ["הכל", "מאושר", "לתיקון", "הוגש"])
 
-            df_history = df_subs.copy()
-            if status_filter != "הכל":
-                df_history = df_history[df_history['סטטוס'] == status_filter]
+            df_hist = df_subs.copy()
+            if status_filter != "הכל": df_hist = df_hist[df_hist['סטטוס'] == status_filter]
             if search_query:
-                df_history = df_history[
-                    df_history['שם התלמיד'].str.contains(search_query, case=False, na=False) |
-                    df_history['שם הפרויקט'].str.contains(search_query, case=False, na=False)
-                    ]
-
-            st.dataframe(df_history.iloc[::-1], use_container_width=True, hide_index=True)
+                df_hist = df_hist[df_hist['שם התלמיד'].str.contains(search_query, case=False, na=False) | df_hist[
+                    'שם הפרויקט'].str.contains(search_query, case=False, na=False)]
+            st.dataframe(df_hist.iloc[::-1], use_container_width=True, hide_index=True)
 
         with t_map:
-            # (קוד המפה נשאר זהה...)
             if not df_stud.empty:
                 map_d = []
                 for _, s_row in df_stud.iterrows():
@@ -174,14 +182,14 @@ else:
 
         with t_studs:
             e_s = st.data_editor(df_stud, num_rows="dynamic", key="ed_s")
-            if st.button("שמור תלמידים"):
+            if st.button("💾 שמור תלמידים"):
                 conn.update(worksheet="students", data=e_s);
                 st.cache_data.clear();
                 st.rerun()
 
         with t_config:
             e_c = st.data_editor(df_conf, num_rows="dynamic", key="ed_c")
-            if st.button("שמור הגדרות"):
+            if st.button("💾 שמור הגדרות"):
                 conn.update(worksheet="config", data=e_c);
                 st.cache_data.clear();
                 st.rerun()
@@ -189,8 +197,7 @@ else:
     else:  # ממשק תלמיד
         my_id = normalize_id(st.session_state['id'])
         my_subs = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
-        curr_stage = all_stages[0]
-        curr_stat = ""
+        curr_stage, curr_stat = all_stages[0], ""
         for s in all_stages:
             s_sub = my_subs[my_subs['שלב'] == s]
             stt = s_sub.iloc[-1]['סטטוס'] if not s_sub.empty else ""
@@ -198,19 +205,19 @@ else:
 
         st.header(f"שלום {st.session_state['name']}")
         if curr_stat == "הוגש":
-            st.info(f"שלב {curr_stage} נשלח וממתין לבדיקה.")
+            st.info(f"הגשה לשלב {curr_stage} התקבלה והיא ממתינה לבדיקת המורה.")
         else:
-            if curr_stat == "לתיקון": st.warning(f"נדרש תיקון לשלב {curr_stage}")
+            if curr_stat == "לתיקון": st.warning(f"נדרש תיקון לשלב: {curr_stage}")
             last_p = my_subs.iloc[-1]['שם הפרויקט'] if not my_subs.empty else ""
             with st.form("sub_f"):
                 st.subheader(f"הגשה לשלב: {curr_stage}")
                 p_n = st.text_input("שם פרויקט:", value=last_p) if curr_stage == all_stages[0] else last_p
-                link = st.text_input("קישור:")
+                link = st.text_input("קישור לתוצר:")
                 techs = st.multiselect("טכנולוגיות:", tech_options)
-                desc = st.text_area("תיאור המשימה שביצעת:")
+                desc = st.text_area("תיאור הביצוע:")
                 if st.form_submit_button("🚀 שלח"):
                     if not p_n or not desc:
-                        st.error("מלא שדות חובה.")
+                        st.error("חובה למלא שם ותיאור.")
                     else:
                         new_r = {"Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                                  "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'],
