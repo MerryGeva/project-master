@@ -10,6 +10,8 @@ st.markdown("""
     <style>
     .stApp { direction: rtl; text-align: right; }
     div[data-testid="stDataFrame"] { direction: rtl; }
+    /* עיצוב כפתור מחיקה */
+    .stButton button[kind="secondary"] { color: red; border-color: red; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -135,8 +137,6 @@ else:
             if search_query:
                 df_hist = df_hist[df_hist['שם התלמיד'].str.contains(search_query, case=False, na=False) |
                                   df_hist['שם הפרויקט'].str.contains(search_query, case=False, na=False)]
-
-            # הצגת הטבלה המלאה (מהחדש לישן)
             st.dataframe(df_hist.iloc[::-1], use_container_width=True, hide_index=True)
 
         with t_map:
@@ -159,14 +159,32 @@ else:
                 st.dataframe(pd.DataFrame(map_d), use_container_width=True, hide_index=True)
 
         with t_studs:
-            uploaded_file = st.file_uploader("טעינת רשימת תלמידים (תעודת זהות, שם התלמיד, כיתה)", type=["xlsx", "csv"])
+            st.subheader("📂 טעינה ומיזוג רשימת תלמידים")
+            uploaded_file = st.file_uploader("טעינת קובץ (תעודת זהות, שם, כיתה)", type=["xlsx", "csv"])
+
             if uploaded_file:
                 new_df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(
                     uploaded_file)
-                if st.button("🚀 עדכן רשימה מהקובץ"):
-                    conn.update(worksheet="students", data=new_df);
+                new_df.columns = ["תעודת זהות", "שם התלמיד", "כיתה"][:len(new_df.columns)]
+                new_df["תעודת זהות"] = new_df["תעודת זהות"].apply(normalize_id)
+
+                if st.button("🚀 מזג רשימה (עדכן קיימים והוסף חדשים)"):
+                    # לוגיקת מיזוג: הופכים את ה-DF הקיים לאינדקס לפי ת"ז, מעדכנים ושומרים
+                    current_studs = df_stud.copy()
+                    current_studs.columns = ["תעודת זהות", "שם התלמיד", "כיתה"][:len(current_studs.columns)]
+                    current_studs["תעודת זהות"] = current_studs["תעודת זהות"].apply(normalize_id)
+
+                    # מיזוג - דורס נתונים קיימים לפי ת"ז
+                    merged_df = pd.concat([current_studs, new_df]).drop_duplicates(subset=["תעודת זהות"], keep='last')
+
+                    conn.update(worksheet="students", data=merged_df)
+                    st.success("הרשימה מוגזה בהצלחה!")
                     st.cache_data.clear();
+                    time.sleep(1);
                     st.rerun()
+
+            st.markdown("---")
+            st.subheader("✏️ עריכה ידנית")
             e_s = st.data_editor(df_stud, num_rows="dynamic", key="ed_s")
             if st.button("💾 שמור שינויים ידניים"):
                 conn.update(worksheet="students", data=e_s);
@@ -174,11 +192,32 @@ else:
                 st.rerun()
 
         with t_config:
+            st.subheader("⚙️ הגדרות מערכת")
             e_c = st.data_editor(df_conf, num_rows="dynamic", key="ed_c")
-            if st.button("💾 שמור הגדרות"):
+            if st.button("💾 שמור שלבים וטכנולוגיות"):
                 conn.update(worksheet="config", data=e_c);
                 st.cache_data.clear();
                 st.rerun()
+
+            st.markdown("---")
+            st.subheader("🚨 אזור מסוכן - Reset")
+            st.warning("פעולה זו תמחק את כל התלמידים ואת כל ההגשות מהמערכת!")
+            confirm_reset = st.checkbox("אני מאשר/ת שאני רוצה למחוק הכל ולאתחל את המערכת")
+
+            if confirm_reset:
+                if st.button("🔥 בצע Reset עכשיו (מחיקה סופית)", type="secondary"):
+                    # יצירת מבנה ריק לגיליונות
+                    empty_subs = pd.DataFrame(
+                        columns=["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "קישור", "סטטוס"])
+                    empty_studs = pd.DataFrame(columns=["תעודת זהות", "שם התלמיד", "כיתה"])
+
+                    conn.update(worksheet="Form Responses 1", data=empty_subs)
+                    conn.update(worksheet="students", data=empty_studs)
+
+                    st.error("המערכת אותחלה. כל הנתונים נמחקו.")
+                    st.cache_data.clear();
+                    time.sleep(2);
+                    st.rerun()
 
     else:  # ממשק תלמיד
         my_id = normalize_id(st.session_state['id'])
@@ -198,12 +237,14 @@ else:
         st.header(f"שלום {st.session_state['name']}")
         if curr_stage is None:
             st.success("🎉 סיימת את כל השלבים!")
+            st.balloons()
         elif curr_stat == "הוגש":
             st.info(f"הגשה לשלב {curr_stage} ממתינה לבדיקה.")
         else:
             if curr_stat == "לתיקון": st.warning(f"⚠️ נדרש תיקון לשלב: {curr_stage}")
             last_p = my_subs.iloc[-1]['שם הפרויקט'] if not my_subs.empty else ""
             with st.form("sub_f"):
+                st.subheader(f"הגשה לשלב: {curr_stage}")
                 p_n = st.text_input("שם פרויקט:", value=last_p) if curr_stage == all_stages[0] else last_p
                 link, techs, desc = st.text_input("קישור:"), st.multiselect("טכנולוגיות:", tech_options), st.text_area(
                     "תיאור:")
