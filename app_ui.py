@@ -39,18 +39,18 @@ def normalize_id(v):
     return s.zfill(9) if s else ""
 
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def load_all_data():
     try:
-        subs = conn.read(worksheet="Form Responses 1", ttl="5s").fillna("")
-        studs = conn.read(worksheet="students", ttl="5s").fillna("")
-        conf = conn.read(worksheet="config", ttl="5s").fillna("")
+        subs = conn.read(worksheet="Form Responses 1", ttl="2s").fillna("")
+        studs = conn.read(worksheet="students", ttl="2s").fillna("")
+        conf = conn.read(worksheet="config", ttl="2s").fillna("")
 
         for df in [subs, studs, conf]:
             df.columns = [str(c).strip() for c in df.columns]
 
+        # וידוא עמודות קריטיות
         if "תאריך יעד" not in conf.columns: conf["תאריך יעד"] = ""
-
         critical_cols = ["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "קישור", "סטטוס"]
         for col in critical_cols:
             if col not in subs.columns: subs[col] = ""
@@ -59,7 +59,7 @@ def load_all_data():
         subs['שלב'] = subs['שלב'].astype(str)
         subs['קישור'] = subs['קישור'].astype(str)
         return subs, studs, conf, True
-    except Exception as e:
+    except:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), False
 
 
@@ -68,19 +68,22 @@ df_subs, df_stud, df_conf, success = load_all_data()
 
 def safe_update(ws, data):
     try:
+        # ניקוי עמודות לא מזוהות לפני העדכון
+        data = data.loc[:, ~data.columns.str.contains('^Unnamed')]
         conn.update(worksheet=ws, data=data)
         st.cache_data.clear()
         time.sleep(1)
         return True
-    except:
-        st.error("שגיאה בעדכון. המתן דקה ונסה שוב.")
+    except Exception as e:
+        st.error(f"שגיאה בעדכון: {e}")
         return False
 
 
 if not success and df_subs.empty:
-    st.warning("המערכת בטעינה או בעומס. נא להמתין...")
+    st.warning("המערכת בטעינה. נא להמתין...")
     st.stop()
 
+# רשימת שלבים וטכנולוגיות מה-Config
 all_stages = df_conf["שלב"].dropna().astype(str).str.strip().tolist() if not df_conf.empty else ["שלב 1"]
 tech_options = df_conf["טכנולוגיות"].dropna().unique().tolist() if not df_conf.empty else ["Python"]
 
@@ -109,7 +112,7 @@ if not st.session_state['logged_in']:
             else:
                 st.error("תעודת זהות לא נמצאה.")
     with t2:
-        pwd = st.text_input("סיסמת מורה:", type="password", key="login_pw")
+        pwd = st.text_input("סיסמת מורה:", type="password", key="m_pass")
         if st.button("כניסה"):
             if pwd == "123":
                 st.session_state.update({'logged_in': True, 'role': 'teacher', 'name': 'המורה'})
@@ -139,15 +142,14 @@ else:
         t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפת כיתה", "✅ אישור והיסטוריה", "⚙️ הגדרות", "👥 תלמידים"])
 
         with t_approve:
-            st.subheader("📥 הגשות חדשות לבדיקה")
+            st.subheader("📥 הגשות חדשות")
             pending = df_subs[df_subs['סטטוס'].str.strip() == 'הוגש']
             if pending.empty:
                 st.info("אין הגשות חדשות.")
             else:
                 for idx, row in pending.iterrows():
                     with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
-                        st.write(f"**פרויקט:** {row['שם הפרויקט']}")
-                        st.write(f"**תיאור:** {row['תוכן']}")
+                        st.write(f"**פרויקט:** {row['שם הפרויקט']}\n**תיאור:** {row['תוכן']}")
                         if row['קישור'] and str(row['קישור']).strip() != "":
                             st.link_button("🔗 פתח קישור לתוצר", row['קישור'])
                         c1, c2 = st.columns(2)
@@ -160,7 +162,7 @@ else:
 
             st.markdown("---")
             st.subheader("📜 היסטוריית הגשות")
-            q = st.text_input("🔎 חיפוש (תלמיד/פרויקט):")
+            q = st.text_input("🔎 חימוש תלמיד/פרויקט:")
             df_hist = df_subs.copy()
             if q: df_hist = df_hist[
                 df_hist['שם התלמיד'].str.contains(q, na=False) | df_hist['שם הפרויקט'].str.contains(q, na=False)]
@@ -182,17 +184,17 @@ else:
                 st.dataframe(pd.DataFrame(map_d), use_container_width=True, hide_index=True)
 
         with t_config:
-            st.subheader("⚙️ הגדרות שלבים ותאריכי יעד")
-            # תיקון באג 1: שמירה ידנית מהעורך
-            edited_conf = st.data_editor(df_conf, num_rows="dynamic", key="conf_editor")
+            st.subheader("⚙️ עריכת שלבים ותאריכי יעד")
+            # תיקון השמירה: שימוש ב-Key ושמירה מהעורך
+            edited_conf = st.data_editor(df_conf, num_rows="dynamic", key="editor_config")
             if st.button("💾 שמור הגדרות"):
                 if safe_update("config", edited_conf):
-                    st.success("הגדרות נשמרו!")
+                    st.success("הגדרות עודכנו בגליון!")
                     st.rerun()
 
         with t_studs:
             st.subheader("👥 ניהול תלמידים")
-            uploaded_file = st.file_uploader("טעינת קובץ למיזוג", type=["xlsx", "csv"])
+            uploaded_file = st.file_uploader("מיזוג רשימה (אקסל)", type=["xlsx", "csv"])
             if uploaded_file:
                 new_df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(
                     uploaded_file)
@@ -201,7 +203,9 @@ else:
                     new_df["תעודת זהות"] = new_df["תעודת זהות"].apply(normalize_id)
                     merged = pd.concat([df_stud, new_df]).drop_duplicates(subset=["תעודת זהות"], keep='last')
                     if safe_update("students", merged): st.rerun()
-            st.data_editor(df_stud, num_rows="dynamic")
+            edited_studs = st.data_editor(df_stud, num_rows="dynamic", key="editor_studs")
+            if st.button("💾 שמור שינויים ידניים ברשימה"):
+                if safe_update("students", edited_studs): st.rerun()
 
     else:  # ממשק תלמיד
         my_id = normalize_id(st.session_state['id'])
@@ -218,15 +222,14 @@ else:
         st.title(f"שלום {st.session_state['name']}")
 
         if curr_stage:
-            # תיקון באג 2: בדיקת תאריך יעד וצביעה באדום
+            # בדיקת איחור לפי תאריך יעד
             row_conf = df_conf[df_conf['שלב'].str.strip() == curr_stage]
             due_date_str = str(row_conf['תאריך יעד'].iloc[0]) if not row_conf.empty else ""
-
             if due_date_str and due_date_str != "nan" and due_date_str != "":
                 try:
                     due_dt = pd.to_datetime(due_date_str, dayfirst=True)
                     if datetime.now() > due_dt:
-                        st.markdown(f'<div class="overdue">⚠️ שים לב: תאריך ההגשה לשלב זה ({due_date_str}) עבר!</div>',
+                        st.markdown(f'<div class="overdue">⚠️ שים לב: תאריך ההגשה ({due_date_str}) עבר!</div>',
                                     unsafe_allow_html=True)
                 except:
                     pass
@@ -244,7 +247,7 @@ else:
                     p_n = st.text_input("שם פרויקט:", value=last_p) if curr_stage == all_stages[0] else last_p
                     link = st.text_input("קישור לתוצר:")
                     techs = st.multiselect("טכנולוגיות:", tech_options)
-                    desc = st.text_area("תיאור מה בוצע:")
+                    desc = st.text_area("מה בוצע בשלב זה?")
 
                     if st.form_submit_button("🚀 שלח הגשה"):
                         is_first = (curr_stage == all_stages[0])
