@@ -14,10 +14,8 @@ st.markdown("""
         direction: rtl !important;
     }
     div[data-testid="stDataFrame"] { direction: rtl; }
-    .stButton button[kind="secondary"] { color: red; border-color: red; }
-    button[data-baseweb="tab"] { direction: rtl; }
-    /* עיצוב התראה אדומה */
-    .overdue-text { color: #ff4b4b !important; font-weight: bold; }
+    /* עיצוב התראה אדומה בולטת */
+    .overdue-text { color: #ff4b4b !important; font-weight: bold; border-right: 3px solid red; padding-right: 5px; }
     .overdue-box { 
         color: white; background-color: #ff4b4b; padding: 15px; 
         border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 20px;
@@ -34,6 +32,20 @@ def normalize_id(v):
     s = str(v).split('.')[0]
     s = ''.join(filter(str.isdigit, s))
     return s.zfill(9) if s else ""
+
+
+def parse_date(date_val):
+    """פונקציה חכמה להמרת תאריכים מכל פורמט"""
+    if pd.isna(date_val) or date_val == "": return None
+    try:
+        if isinstance(date_val, datetime): return date_val
+        # ניסיון המרה מפורמט ישראלי נפוץ
+        return datetime.strptime(str(date_val).strip(), "%d/%m/%Y")
+    except:
+        try:
+            return pd.to_datetime(date_val, dayfirst=True)
+        except:
+            return None
 
 
 @st.cache_data(ttl=5, show_spinner=False)
@@ -66,7 +78,7 @@ def safe_update(ws, data):
 
 
 if not success and df_subs.empty:
-    st.warning("טוען נתונים...")
+    st.warning("טוען נתונים מהגליון...")
     st.stop()
 
 all_stages = df_conf["שלב"].dropna().astype(str).str.strip().tolist() if not df_conf.empty else ["שלב 1"]
@@ -116,35 +128,33 @@ else:
                 sub_at_stage = my_s[my_s['שלב'].str.strip() == s]
                 stat = str(sub_at_stage.iloc[-1]['סטטוס']).strip() if not sub_at_stage.empty else ""
 
-                # בדיקת איחור לצביעה בסרגל
+                # לוגיקת צביעה באדום בסרגל
                 is_overdue = False
                 row_c = df_conf[df_conf['שלב'].str.strip() == s]
-                due_val = row_c['תאריך יעד'].iloc[0] if not row_c.empty else ""
-                if due_val and str(due_val).lower() != "nan" and stat != "מאושר" and stat != "הוגש":
-                    try:
-                        due_dt = datetime.strptime(str(due_val).strip(), "%d/%m/%Y")
-                        if now > due_dt: is_overdue = True
-                    except:
-                        pass
+                due_dt = parse_date(row_c['תאריך יעד'].iloc[0]) if not row_c.empty else None
+
+                if due_dt and now > due_dt and stat not in ["מאושר", "הוגש"]:
+                    is_overdue = True
 
                 icon = "✅" if stat == "מאושר" else ("❌" if stat == "לתיקון" else ("⏳" if stat == "הוגש" else "⚪"))
                 if is_overdue:
-                    st.markdown(f'<p class="overdue-text">⏰ {s} (באיחור!)</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="overdue-text">⏰ {s} (איחור!)</p>', unsafe_allow_html=True)
                 else:
                     st.write(f"{icon} {s}")
 
     if st.session_state['role'] == 'teacher':
-        st.header("👨‍🏫 לוח בקרה")
+        st.header("👨‍🏫 לוח בקרה למורה")
         t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפה", "✅ אישור והיסטוריה", "⚙️ הגדרות", "👥 תלמידים"])
 
         with t_approve:
-            st.subheader("📥 הגשות לבדיקה")
+            st.subheader("📥 הגשות חדשות")
             pending = df_subs[df_subs['סטטוס'].str.strip() == 'הוגש']
             if pending.empty:
                 st.info("אין הגשות חדשות.")
             else:
                 for idx, row in pending.iterrows():
                     with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
+                        st.write(f"פרויקט: {row['שם הפרויקט']}")
                         st.write(f"תוכן: {row['תוכן']}")
                         if row['קישור']: st.link_button("קישור", row['קישור'])
                         c1, c2 = st.columns(2)
@@ -159,7 +169,7 @@ else:
 
             st.markdown("---")
             st.subheader("📜 היסטוריה וחיפוש")
-            search_q = st.text_input("🔎 חפש לפי שם תלמיד או פרויקט:")
+            search_q = st.text_input("🔎 חפש תלמיד או פרויקט:")
             hist_df = df_subs.copy()
             if search_q:
                 hist_df = hist_df[hist_df['שם התלמיד'].str.contains(search_q, na=False, case=False) |
@@ -167,11 +177,11 @@ else:
             st.dataframe(hist_df.iloc[::-1], use_container_width=True, hide_index=True)
 
         with t_config:
-            st.subheader("⚙️ הגדרות מערכת")
-            edited_conf = st.data_editor(df_conf, num_rows="dynamic", key="final_conf_editor")
-            if st.button("💾 שמור שינויים ב-Config"):
+            st.subheader("⚙️ עריכת שלבים ותאריכי יעד")
+            edited_conf = st.data_editor(df_conf, num_rows="dynamic", key="teacher_conf_final")
+            if st.button("💾 שמור הגדרות"):
                 if safe_update("config", edited_conf):
-                    st.success("נשמר!")
+                    st.success("נשמר בהצלחה!")
                     st.rerun()
 
         with t_map:
@@ -189,13 +199,15 @@ else:
                 st.dataframe(pd.DataFrame(map_data), use_container_width=True, hide_index=True)
 
         with t_studs:
-            edited_studs = st.data_editor(df_stud, num_rows="dynamic", key="final_stud_editor")
+            edited_studs = st.data_editor(df_stud, num_rows="dynamic", key="teacher_stud_final")
             if st.button("💾 שמור רשימת תלמידים"):
                 if safe_update("students", edited_studs): st.rerun()
 
     else:  # --- ממשק תלמיד ---
         my_id = normalize_id(st.session_state['id'])
         my_subs = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
+
+        # מציאת השלב הנוכחי
         curr_stage, curr_stat = None, ""
         for s in all_stages:
             sub_s = my_subs[my_subs['שלב'].str.strip() == s]
@@ -205,38 +217,50 @@ else:
                 break
 
         st.title(f"שלום {st.session_state['name']}")
+
         if curr_stage:
-            # התראה אדומה בראש העמוד
+            # שליפת שם הפרויקט מהגשה קודמת (אם קיימת)
+            existing_project_name = my_subs['שם הפרויקט'].iloc[0] if not my_subs.empty and my_subs['שם הפרויקט'].iloc[
+                0] != "" else ""
+
+            # בדיקת איחור להצגת התראה בראש העמוד
             row_c = df_conf[df_conf['שלב'].str.strip() == curr_stage]
-            due_s = str(row_c['תאריך יעד'].iloc[0]) if not row_c.empty else ""
-            if due_s and str(due_s).lower() != "nan" and curr_stat != "הוגש":
-                try:
-                    if datetime.now() > datetime.strptime(str(due_s).strip(), "%d/%m/%Y"):
-                        st.markdown(f'<div class="overdue-box">⚠️ איחור! תאריך היעד ({due_s}) עבר.</div>',
-                                    unsafe_allow_html=True)
-                except:
-                    pass
+            due_dt = parse_date(row_c['תאריך יעד'].iloc[0]) if not row_c.empty else None
+            if due_dt and datetime.now() > due_dt and curr_stat != "הוגש":
+                st.markdown(f'<div class="overdue-box">⚠️ שים לב: עברת את תאריך היעד להגשת שלב זה!</div>',
+                            unsafe_allow_html=True)
 
             if curr_stat == "לתיקון":
                 st.error(f"❌ נדרש תיקון בשלב: {curr_stage}")
             elif curr_stat == "הוגש":
-                st.info(f"⏳ שלב {curr_stage} נשלח ובבדיקה.")
+                st.info(f"⏳ שלב {curr_stage} בבדיקת המורה.")
             else:
                 st.subheader(f"🚀 השלב הבא שלך: {curr_stage}")
-                with st.form("f"):
-                    p_name = st.text_input("שם פרויקט:")
-                    link = st.text_input("קישור:")
-                    desc = st.text_area("תיאור:")
-                    if st.form_submit_button("שלח הגשה"):
-                        if curr_stage != all_stages[0] and not link:
+                with st.form("sub_form"):
+                    # אם זה השלב הראשון ואין שם פרויקט - נותנים להזין. אחרת - מציגים את הקיים.
+                    if curr_stage == all_stages[0] and existing_project_name == "":
+                        p_name = st.text_input("שם הפרויקט שלך:")
+                    else:
+                        st.write(f"**שם הפרויקט:** {existing_project_name}")
+                        p_name = existing_project_name
+
+                    link = st.text_input("קישור לתוצר:")
+                    desc = st.text_area("תיאור הביצוע:")
+
+                    if st.form_submit_button("🚀 שלח הגשה"):
+                        if not p_name or not desc:
+                            st.error("מלא שדות חובה.")
+                        elif curr_stage != all_stages[0] and not link:
                             st.error("חובה קישור!")
                         else:
-                            new_r = {"Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"), "תעודת זהות": my_id,
-                                     "שם התלמיד": st.session_state['name'], "שלב": curr_stage, "שם הפרויקט": p_name,
+                            new_r = {"Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                                     "תעודת זהות": my_id, "שם התלמיד": st.session_state['name'],
+                                     "שלב": curr_stage, "שם הפרויקט": p_name,
                                      "תוכן": desc, "קישור": link, "סטטוס": "הוגש"}
                             if safe_update("Form Responses 1", pd.concat([df_subs, pd.DataFrame([new_r])])):
                                 st.balloons()
+                                st.success("הוגש בהצלחה!")
                                 st.rerun()
         else:
-            st.success("סיימת הכל! 🎉")
+            st.success("סיימת את כל השלבים! 🎉")
             st.balloons()
