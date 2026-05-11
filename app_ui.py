@@ -16,7 +16,7 @@ st.markdown("""
     div[data-testid="stDataFrame"] { direction: rtl; }
     .stButton button[kind="secondary"] { color: red; border-color: red; }
     button[data-baseweb="tab"] { direction: rtl; }
-    /* עיצוב התראה אדומה בטקסט */
+    /* עיצוב התראה אדומה */
     .overdue-text { color: #ff4b4b !important; font-weight: bold; }
     .overdue-box { 
         color: white; background-color: #ff4b4b; padding: 15px; 
@@ -66,7 +66,7 @@ def safe_update(ws, data):
 
 
 if not success and df_subs.empty:
-    st.warning("טוען נתונים מהגליון... נא להמתין.")
+    st.warning("טוען נתונים...")
     st.stop()
 
 all_stages = df_conf["שלב"].dropna().astype(str).str.strip().tolist() if not df_conf.empty else ["שלב 1"]
@@ -112,30 +112,22 @@ else:
             my_s = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
 
             now = datetime.now()
-
             for s in all_stages:
                 sub_at_stage = my_s[my_s['שלב'].str.strip() == s]
                 stat = str(sub_at_stage.iloc[-1]['סטטוס']).strip() if not sub_at_stage.empty else ""
 
-                # לוגיקת צביעה באדום בסרגל הצד
+                # בדיקת איחור לצביעה בסרגל
                 is_overdue = False
                 row_c = df_conf[df_conf['שלב'].str.strip() == s]
                 due_val = row_c['תאריך יעד'].iloc[0] if not row_c.empty else ""
-
                 if due_val and str(due_val).lower() != "nan" and stat != "מאושר" and stat != "הוגש":
                     try:
-                        if isinstance(due_val, str):
-                            due_dt = datetime.strptime(due_val, "%d/%m/%Y")
-                        else:
-                            due_dt = pd.to_datetime(due_val)
-
-                        if now > due_dt:
-                            is_overdue = True
+                        due_dt = datetime.strptime(str(due_val).strip(), "%d/%m/%Y")
+                        if now > due_dt: is_overdue = True
                     except:
                         pass
 
                 icon = "✅" if stat == "מאושר" else ("❌" if stat == "לתיקון" else ("⏳" if stat == "הוגש" else "⚪"))
-
                 if is_overdue:
                     st.markdown(f'<p class="overdue-text">⏰ {s} (באיחור!)</p>', unsafe_allow_html=True)
                 else:
@@ -143,32 +135,44 @@ else:
 
     if st.session_state['role'] == 'teacher':
         st.header("👨‍🏫 לוח בקרה")
-        t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפה", "✅ אישור", "⚙️ הגדרות", "👥 תלמידים"])
-
-        with t_config:
-            st.subheader("⚙️ עריכת שלבים ותאריכי יעד")
-            edited_conf = st.data_editor(df_conf, num_rows="dynamic", key="teacher_config_final")
-            if st.button("💾 שמור הגדרות"):
-                if safe_update("config", edited_conf):
-                    st.success("ההגדרות נשמרו בהצלחה!")
-                    st.rerun()
+        t_map, t_approve, t_config, t_studs = st.tabs(["🗺️ מפה", "✅ אישור והיסטוריה", "⚙️ הגדרות", "👥 תלמידים"])
 
         with t_approve:
+            st.subheader("📥 הגשות לבדיקה")
             pending = df_subs[df_subs['סטטוס'].str.strip() == 'הוגש']
             if pending.empty:
                 st.info("אין הגשות חדשות.")
             else:
                 for idx, row in pending.iterrows():
-                    with st.expander(f"{row['שם התלמיד']} - {row['שלב']}"):
+                    with st.expander(f"🆕 {row['שם התלמיד']} - {row['שלב']}"):
                         st.write(f"תוכן: {row['תוכן']}")
-                        if row['קישור']: st.link_button("פתח קישור", row['קישור'])
+                        if row['קישור']: st.link_button("קישור", row['קישור'])
                         c1, c2 = st.columns(2)
-                        if c1.button("אשר ✅", key=f"app_{idx}"):
+                        if c1.button("אשר ✅", key=f"a_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "מאושר"
-                            if safe_update("Form Responses 1", df_subs): st.rerun()
-                        if c2.button("לתיקון ❌", key=f"rej_{idx}"):
+                            if safe_update("Form Responses 1", df_subs):
+                                st.balloons()
+                                st.rerun()
+                        if c2.button("לתיקון ❌", key=f"r_{idx}"):
                             df_subs.at[idx, 'סטטוס'] = "לתיקון"
                             if safe_update("Form Responses 1", df_subs): st.rerun()
+
+            st.markdown("---")
+            st.subheader("📜 היסטוריה וחיפוש")
+            search_q = st.text_input("🔎 חפש לפי שם תלמיד או פרויקט:")
+            hist_df = df_subs.copy()
+            if search_q:
+                hist_df = hist_df[hist_df['שם התלמיד'].str.contains(search_q, na=False, case=False) |
+                                  hist_df['שם הפרויקט'].str.contains(search_q, na=False, case=False)]
+            st.dataframe(hist_df.iloc[::-1], use_container_width=True, hide_index=True)
+
+        with t_config:
+            st.subheader("⚙️ הגדרות מערכת")
+            edited_conf = st.data_editor(df_conf, num_rows="dynamic", key="final_conf_editor")
+            if st.button("💾 שמור שינויים ב-Config"):
+                if safe_update("config", edited_conf):
+                    st.success("נשמר!")
+                    st.rerun()
 
         with t_map:
             if not df_stud.empty:
@@ -185,14 +189,13 @@ else:
                 st.dataframe(pd.DataFrame(map_data), use_container_width=True, hide_index=True)
 
         with t_studs:
-            edited_studs = st.data_editor(df_stud, num_rows="dynamic", key="teacher_stud_final")
+            edited_studs = st.data_editor(df_stud, num_rows="dynamic", key="final_stud_editor")
             if st.button("💾 שמור רשימת תלמידים"):
                 if safe_update("students", edited_studs): st.rerun()
 
     else:  # --- ממשק תלמיד ---
         my_id = normalize_id(st.session_state['id'])
         my_subs = df_subs[df_subs['תעודת זהות'].apply(normalize_id) == my_id]
-
         curr_stage, curr_stat = None, ""
         for s in all_stages:
             sub_s = my_subs[my_subs['שלב'].str.strip() == s]
@@ -202,15 +205,14 @@ else:
                 break
 
         st.title(f"שלום {st.session_state['name']}")
-
         if curr_stage:
-            # התראה בולטת בראש העמוד אם השלב הנוכחי באיחור
+            # התראה אדומה בראש העמוד
             row_c = df_conf[df_conf['שלב'].str.strip() == curr_stage]
             due_s = str(row_c['תאריך יעד'].iloc[0]) if not row_c.empty else ""
-            if due_s and due_s != "nan" and curr_stat != "הוגש":
+            if due_s and str(due_s).lower() != "nan" and curr_stat != "הוגש":
                 try:
-                    if datetime.now() > pd.to_datetime(due_s, dayfirst=True):
-                        st.markdown(f'<div class="overdue-box">⚠️ איחור! תאריך היעד להגשת השלב ({due_s}) עבר.</div>',
+                    if datetime.now() > datetime.strptime(str(due_s).strip(), "%d/%m/%Y"):
+                        st.markdown(f'<div class="overdue-box">⚠️ איחור! תאריך היעד ({due_s}) עבר.</div>',
                                     unsafe_allow_html=True)
                 except:
                     pass
@@ -218,21 +220,23 @@ else:
             if curr_stat == "לתיקון":
                 st.error(f"❌ נדרש תיקון בשלב: {curr_stage}")
             elif curr_stat == "הוגש":
-                st.info(f"⏳ שלב {curr_stage} הוגש ובבדיקה.")
+                st.info(f"⏳ שלב {curr_stage} נשלח ובבדיקה.")
             else:
                 st.subheader(f"🚀 השלב הבא שלך: {curr_stage}")
-                with st.form("student_form"):
+                with st.form("f"):
                     p_name = st.text_input("שם פרויקט:")
-                    link = st.text_input("קישור לתוצר:")
-                    desc = st.text_area("תיאור מה בוצע:")
+                    link = st.text_input("קישור:")
+                    desc = st.text_area("תיאור:")
                     if st.form_submit_button("שלח הגשה"):
                         if curr_stage != all_stages[0] and not link:
-                            st.error("חובה לצרף קישור!")
+                            st.error("חובה קישור!")
                         else:
                             new_r = {"Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"), "תעודת זהות": my_id,
                                      "שם התלמיד": st.session_state['name'], "שלב": curr_stage, "שם הפרויקט": p_name,
                                      "תוכן": desc, "קישור": link, "סטטוס": "הוגש"}
-                            if safe_update("Form Responses 1", pd.concat([df_subs, pd.DataFrame([new_r])])): st.rerun()
+                            if safe_update("Form Responses 1", pd.concat([df_subs, pd.DataFrame([new_r])])):
+                                st.balloons()
+                                st.rerun()
         else:
-            st.success("סיימת את כל השלבים! 🎉")
+            st.success("סיימת הכל! 🎉")
             st.balloons()
