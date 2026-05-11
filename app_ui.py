@@ -188,12 +188,7 @@ else:
 
         with t_studs:
             st.subheader("👥 ניהול רשימת תלמידים")
-            uploaded_file = st.file_uploader("טעינת קובץ למיזוג (ת"
-            ז, שם, כיתה)", type=["
-            xlsx
-            ", "
-            csv
-            "])
+            uploaded_file = st.file_uploader("טעינת קובץ למיזוג ת.ז, שם, כיתה)", type=["xlsx", "csv"])
             if uploaded_file:
                 new_df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(
                     uploaded_file)
