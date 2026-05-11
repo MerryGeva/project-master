@@ -8,23 +8,14 @@ from datetime import datetime
 st.set_page_config(page_title="Project Master Pro", layout="wide")
 st.markdown("""
     <style>
-    /* הגדרת כיוון כללי לאפליקציה */
     .stApp { direction: rtl; text-align: right; }
-
-    /* יישור כל סוגי הכותרות לימין */
     h1, h2, h3, h4, h5, h6, p, span, label {
         text-align: right !important;
         direction: rtl !important;
     }
-
-    /* התאמת רכיבים ספציפיים */
     div[data-testid="stDataFrame"] { direction: rtl; }
     .stButton button[kind="secondary"] { color: red; border-color: red; }
-
-    /* יישור טקסט בתוך טאבים */
-    button[data-baseweb="tab"] {
-        direction: rtl;
-    }
+    button[data-baseweb="tab"] { direction: rtl; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -151,7 +142,6 @@ else:
                         st.write(f"**תיאור:** {row['תוכן']}")
                         if row['קישור'] and str(row['קישור']).strip() != "":
                             st.link_button("🔗 פתח קישור לתוצר", row['קישור'])
-
                         st.markdown("---")
                         c1, c2 = st.columns(2)
                         if c1.button("אשר ✅", key=f"ok_{idx}"):
@@ -166,16 +156,12 @@ else:
             col_q, col_s = st.columns([2, 1])
             q = col_q.text_input("🔎 חיפוש:")
             s_filter = col_s.selectbox("סטטוס:", ["הכל", "מאושר", "לתיקון", "הוגש"])
-
             df_hist = df_subs.copy()
-            if s_filter != "הכל":
-                df_hist = df_hist[df_hist['סטטוס'].str.strip() == s_filter]
-            if q:
-                df_hist = df_hist[
-                    df_hist['שם התלמיד'].str.contains(q, na=False, case=False) | df_hist['שם הפרויקט'].str.contains(q,
-                                                                                                                    na=False,
-                                                                                                                    case=False)]
-
+            if s_filter != "הכל": df_hist = df_hist[df_hist['סטטוס'].str.strip() == s_filter]
+            if q: df_hist = df_hist[
+                df_hist['שם התלמיד'].str.contains(q, na=False, case=False) | df_hist['שם הפרויקט'].str.contains(q,
+                                                                                                                na=False,
+                                                                                                                case=False)]
             st.dataframe(df_hist.iloc[::-1], use_container_width=True, hide_index=True)
 
         with t_map:
@@ -221,7 +207,6 @@ else:
             st.data_editor(df_conf, num_rows="dynamic", key="ed_c_editor")
             if st.button("💾 שמור הגדרות"):
                 if safe_update("config", st.session_state.ed_c_editor): st.rerun()
-
             st.markdown("---")
             confirm = st.checkbox("אני מאשר Reset")
             if confirm and st.button("🔥 בצע Reset", type="secondary"):
@@ -261,11 +246,16 @@ else:
             with st.form("sub_form"):
                 last_p = my_subs.iloc[-1]['שם הפרויקט'] if not my_subs.empty else ""
                 p_n = st.text_input("שם פרויקט:", value=last_p) if curr_stage == all_stages[0] else last_p
-                link, techs, desc = st.text_input("קישור:"), st.multiselect("טכנולוגיות:", tech_options), st.text_area(
-                    "תיאור:")
-                if st.form_submit_button("🚀 שלח"):
+                link, techs, desc = st.text_input("קישור לתוצר:"), st.multiselect("טכנולוגיות:",
+                                                                                  tech_options), st.text_area("תיאור:")
+
+                if st.form_submit_button("🚀 שלח הגשה"):
+                    # לוגיקת בדיקת שדות חובה כולל קישור משלב 2 ומעלה
+                    is_first_stage = (curr_stage == all_stages[0])
                     if not p_n or not desc:
-                        st.error("נא למלא שדות חובה.")
+                        st.error("נא למלא את שם הפרויקט ותיאור הביצוע.")
+                    elif not is_first_stage and not link:
+                        st.error(f"החל משלב זה ({curr_stage}) חובה לצרף קישור לתוצר!")
                     else:
                         new_r = {"Timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                                  "תעודת זהות": st.session_state['id'], "שם התלמיד": st.session_state['name'],
@@ -274,7 +264,7 @@ else:
                         conn.update(worksheet="Form Responses 1",
                                     data=pd.concat([df_subs, pd.DataFrame([new_r])], ignore_index=True))
                         st.balloons();
-                        st.success("הוגש!");
+                        st.success("הוגש בהצלחה!");
                         st.cache_data.clear()
                         time.sleep(1);
                         st.rerun()
