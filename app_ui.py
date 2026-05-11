@@ -25,30 +25,25 @@ def normalize_id(v):
     return s.zfill(9) if s else ""
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30, show_spinner=False)  # נוריד ל-30 שניות כדי שתהיה תגובתיות
 def load_all_data():
     try:
-        subs = conn.read(worksheet="Form Responses 1", ttl="1m").fillna("")
-        studs = conn.read(worksheet="students", ttl="1m").fillna("")
-        conf = conn.read(worksheet="config", ttl="1m").fillna("")
+        # קריאה עם TTL קצר יותר בתוך החיבור
+        subs = conn.read(worksheet="Form Responses 1", ttl="30s").fillna("")
+        studs = conn.read(worksheet="students", ttl="30s").fillna("")
+        conf = conn.read(worksheet="config", ttl="30s").fillna("")
 
+        # ... שאר ניקוי העמודות כמו קודם ...
         for df in [subs, studs, conf]:
             df.columns = [str(c).strip() for c in df.columns]
 
-        critical_cols = ["Timestamp", "תעודת זהות", "שם התלמיד", "שלב", "שם הפרויקט", "תוכן", "קישור", "סטטוס"]
-        for col in critical_cols:
-            if col not in subs.columns: subs[col] = ""
-
-        subs['סטטוס'] = subs['סטטוס'].astype(str)
-        subs['שלב'] = subs['שלב'].astype(str)
         return subs, studs, conf, True
     except Exception as e:
         if "429" in str(e):
-            st.error("עומס זמני על גוגל. המערכת תתעדכן בעוד רגע...")
-        else:
-            st.error(f"שגיאה: {e}")
+            # כאן החלק החשוב: אם יש שגיאה, אל תשמור אותה ב-Cache
+            st.cache_data.clear()
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), False
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), False
-
 
 df_subs, df_stud, df_conf, success = load_all_data()
 
